@@ -124,7 +124,31 @@ parameter_overrides = "Environment=dev Cpu=256 Memory=512 DesiredCount=1 ApiEndp
 
 **Purpose:** After configuring this file, you can simply run `sam deploy` without any flags — it reads all settings from here.
 
-## Deployment Steps
+## Automated Deploy
+
+Run the deploy script to handle the full deployment (infrastructure + app):
+
+```bash
+# Linux/macOS (first time only)
+chmod +x .scripts/deploy.sh
+
+# Run the script
+./.scripts/deploy.sh
+```
+
+Windows (Git Bash or WSL):
+
+```bash
+bash .scripts/deploy.sh
+```
+
+With a specific environment:
+
+```bash
+./.scripts/deploy.sh --env staging
+```
+
+## Deployment Steps (Manual)
 
 ### 1. Build Docker Image
 
