@@ -4,10 +4,35 @@ Deploy the Node.js app to AWS ECS Fargate using AWS SAM (Serverless Application 
 
 ## Prerequisites
 
-- [AWS CLI](https://aws.amazon.com/cli/) configured with credentials
-- [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) installed
-- [Docker](https://docs.docker.com/get-docker/) running locally
-- Node.js 22+
+Before deploying, ensure the following tools are installed and configured:
+
+### 1. AWS CLI — configured with credentials
+
+```bash
+aws sts get-caller-identity
+```
+
+Expected output: your account ID, user ARN, and user ID. If not configured, run `aws configure`.
+
+### 2. AWS SAM CLI — installed
+
+```bash
+sam --version
+```
+
+### 3. Docker — installed and running
+
+```bash
+docker info
+```
+
+If Docker is not running, start Docker Desktop or the Docker service.
+
+### 4. Node.js 22+
+
+```bash
+node --version
+```
 
 ## Architecture
 
@@ -74,7 +99,7 @@ Additional Resources:
 
 ## Configuration Files
 
-Before deploying, you need to configure two files:
+Before deploying, you need to configure one file:
 
 ### `samconfig.toml`
 
@@ -94,24 +119,10 @@ region = "ap-southeast-1"           # AWS region
 confirm_changeset = true            # Prompt before applying changes
 capabilities = "CAPABILITY_IAM"     # Required for IAM role creation
 disable_rollback = false            # Rollback on failure
-parameter_overrides = "Environment=dev Cpu=256 Memory=512 DesiredCount=1"
+parameter_overrides = "Environment=dev Cpu=256 Memory=512 DesiredCount=1 ApiEndpoint=https://api.openweathermap.org ApiKey=your-api-key-here"
 ```
 
 **Purpose:** After configuring this file, you can simply run `sam deploy` without any flags — it reads all settings from here.
-
-### `sam-parameters.json`
-
-Stores sensitive or environment-specific parameter values (like API keys). Keeps secrets out of your terminal history and makes it easy to switch environments.
-
-```json
-{
-  "Environment": "dev",
-  "ApiEndpoint": "https://api.openweathermap.org",
-  "ApiKey": "your-api-key-here"
-}
-```
-
-**Purpose:** Pass parameter values to `sam deploy` without exposing them in command-line arguments. Both files are in `.gitignore` to keep secrets out of git.
 
 ## Deployment Steps
 
@@ -127,22 +138,13 @@ docker build -t node-app .
 
 ### 2. Configure Parameters
 
-Edit `samconfig.toml` — set your AWS region and stack name:
+Edit `samconfig.toml` — set your AWS region, stack name, and API key:
 
 ```toml
 [default.deploy.parameters]
 stack_name = "node-app-dev"
 region = "ap-southeast-1"
-```
-
-Edit `sam-parameters.json` — set your API key:
-
-```json
-{
-  "Environment": "dev",
-  "ApiEndpoint": "https://api.openweathermap.org",
-  "ApiKey": "your-actual-api-key"
-}
+parameter_overrides = "Environment=dev Cpu=256 Memory=512 DesiredCount=1 ApiEndpoint=https://api.openweathermap.org ApiKey=your-actual-api-key"
 ```
 
 ### 3. Build SAM Template
@@ -160,16 +162,12 @@ sam deploy
 # Option B: Guided deployment (interactive — overwrites samconfig.toml)
 sam deploy --guided
 
-# Option C: Deploy with parameter overrides from sam-parameters.json
+# Option C: Deploy with inline parameter overrides
 sam deploy \
   --parameter-overrides \
     Environment=dev \
     ApiKey="your-api-key" \
     ApiEndpoint="https://api.openweathermap.org"
-
-# Option D: Read parameters from file (bash)
-sam deploy \
-  --parameter-overrides $(cat sam-parameters.json | jq -r 'to_entries | map("\(.key)=\(.value)") | .[]')
 ```
 
 ### 5. Authenticate Docker to ECR
@@ -295,7 +293,7 @@ rm -rf .aws-sam/
 To remove local config files (if you no longer need them):
 
 ```bash
-rm samconfig.toml sam-parameters.json
+rm samconfig.toml
 ```
 
 ## Outputs
@@ -330,13 +328,13 @@ Deploy to different environments:
 
 ```bash
 # Dev
-sam deploy --parameter-overrides Environment=dev ApiKey="key123"
+sam deploy --parameter-overrides Environment=dev
 
 # Staging
-sam deploy --parameter-overrides Environment=staging ApiKey="key456"
+sam deploy --parameter-overrides Environment=staging
 
 # Production
-sam deploy --parameter-overrides Environment=prod ApiKey="key789"
+sam deploy --parameter-overrides Environment=prod
 ```
 
 Each environment gets its own isolated stack with separate resources.

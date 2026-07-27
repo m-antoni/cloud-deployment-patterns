@@ -60,7 +60,6 @@ deploy-patterns/
 │   ├── src/                               # App source code
 │   ├── template.yaml                      # SAM/CloudFormation template
 │   ├── samconfig.toml                     # SAM CLI config
-│   ├── sam-parameters.json                # Parameter values
 │   ├── Dockerfile
 │   └── ...
 └── 03-deploy-using-terraform/             # Terraform (IaC) deployment
