@@ -286,6 +286,38 @@ Or via AWS Console:
 
 ## Cleanup
 
+### Automated Cleanup
+
+Run the cleanup script to delete all resources for an environment:
+
+```bash
+# Linux/macOS (first time only)
+chmod +x .scripts/cleanup.sh
+
+# Run the script
+./.scripts/cleanup.sh
+```
+
+Windows (Git Bash or WSL):
+
+```bash
+bash .scripts/cleanup.sh
+```
+
+Delete a specific environment:
+
+```bash
+./.scripts/cleanup.sh --env staging
+```
+
+Delete all environments:
+
+```bash
+./.scripts/cleanup.sh --env all
+```
+
+### Manual Cleanup
+
 Delete all resources created by the SAM stack:
 
 ```bash
