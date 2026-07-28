@@ -71,11 +71,11 @@ deploy-patterns/
 
 ## Deployment Guides
 
-| Method                                        | Description                                                        | Best For                          |
-| --------------------------------------------- | ------------------------------------------------------------------ | --------------------------------- |
-| [AWS Console](./01-deploy-using-aws-console/) | Manual deployment via AWS Management Console UI                    | Learning, one-off deployments     |
-| [AWS SAM](./02-deploy-using-aws-sam/)         | IaC using AWS SAM and CloudFormation                               | Automated, repeatable deployments |
-| [Terraform](./03-deploy-using-terraform/)     | IaC using Terraform — multi-cloud, state-managed **(In Progress)** | Advanced IaC, multi-cloud         |
+| Method                                             | Description                                                        | Best For                          |
+| -------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------- |
+| [AWS&nbsp;Console](./01-deploy-using-aws-console/) | Manual deployment via AWS Management Console UI                    | Learning, one-off deployments     |
+| [AWS&nbsp;SAM](./02-deploy-using-aws-sam/)         | IaC using AWS SAM and CloudFormation                               | Automated, repeatable deployments |
+| [Terraform](./03-deploy-using-terraform/)          | IaC using Terraform — multi-cloud, state-managed **(In Progress)** | Advanced IaC, multi-cloud         |
 
 ## Prerequisites
 
