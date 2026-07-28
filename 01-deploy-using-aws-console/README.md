@@ -289,15 +289,20 @@ Delete all AWS resources to avoid unnecessary charges.
 
 ### Using Cleanup Script (Recommended)
 
-A cleanup script is provided in `.scripts/cleanup.sh` that automates the entire deletion process:
+Cleanup scripts are provided that automate the entire deletion process:
 
+**Linux / Git Bash:**
 ```bash
-# Run the cleanup script
 chmod +x .scripts/cleanup.sh
 ./scripts/cleanup.sh
 ```
 
-This script will:
+**Windows PowerShell:**
+```powershell
+.scripts\cleanup.ps1
+```
+
+These scripts will:
 1. Delete ECS Service and wait for it to become inactive
 2. Delete ECS Cluster
 3. Deregister and delete all Task Definition revisions

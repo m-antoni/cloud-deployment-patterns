@@ -153,12 +153,18 @@ Windows (Git Bash or WSL):
 bash .scripts/deploy.sh
 ```
 
+**Windows PowerShell:**
+```powershell
+.scripts\deploy.ps1
+```
+
 > **First run:** The script will auto-detect that `samconfig.toml` doesn't exist and run `sam deploy --guided` to walk you through the initial setup (enter your API key when prompted). On subsequent runs, it reads from `samconfig.toml` and deploys fully automated.
 
 With a specific environment:
 
 ```bash
 ./.scripts/deploy.sh --env staging
+.scripts\deploy.ps1 -Env staging
 ```
 
 ## Deployment Steps (Manual)
@@ -348,6 +354,13 @@ Windows (Git Bash or WSL):
 
 ```bash
 bash .scripts/cleanup.sh
+```
+
+**Windows PowerShell:**
+```powershell
+.scripts\cleanup.ps1
+.scripts\cleanup.ps1 -Env staging
+.scripts\cleanup.ps1 -Env all
 ```
 
 Delete a specific environment:

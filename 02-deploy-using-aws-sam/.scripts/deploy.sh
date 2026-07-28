@@ -108,7 +108,8 @@ if [ ! -f samconfig.toml ]; then
     echo "No samconfig.toml found — running guided setup..."
     echo "Enter your API key when prompted (ApiKey parameter)."
     echo "Accept defaults for other parameters."
-    sam deploy --guided --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
+    echo "Stack name is pre-set to '${STACK_NAME}'."
+    sam deploy --guided --stack-name "${STACK_NAME}" --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
 else
     sam deploy --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
 fi
@@ -189,11 +190,17 @@ TASK_ARN=$(aws ecs list-tasks \
     --output text)
 
 if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
-    PUBLIC_IP=$(aws ecs describe-tasks \
+    ENI_ID=$(aws ecs describe-tasks \
         --cluster ${CLUSTER} \
         --tasks ${TASK_ARN} \
         --region ${REGION} \
-        --query "tasks[0].attachments[0].details[?name=='privateIPv4Address'].value" \
+        --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
+        --output text)
+
+    PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+        --network-interface-ids ${ENI_ID} \
+        --region ${REGION} \
+        --query "NetworkInterfaces[0].Association.PublicIp" \
         --output text)
 
     echo ""
