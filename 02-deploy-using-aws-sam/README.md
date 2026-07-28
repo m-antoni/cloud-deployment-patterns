@@ -103,7 +103,16 @@ Before deploying, you need to configure one file:
 
 ### `samconfig.toml`
 
-SAM CLI's configuration file. Stores your deployment settings (stack name, region, parameter overrides) so you don't have to type them every time. Auto-generated on first `sam deploy --guided`, but a template is provided.
+SAM CLI's configuration file. Stores your deployment settings (stack name, region, parameter overrides) so you don't have to type them every time.
+
+**Setup:**
+
+```bash
+# Copy the example template
+cp samconfig.toml.example samconfig.toml
+
+# Then edit samconfig.toml with your actual API key
+```
 
 ```toml
 # samconfig.toml
@@ -112,15 +121,17 @@ version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]
-stack_name = "node-app-dev"        # CloudFormation stack name
-resolve_s3 = true                   # Use S3 for artifact storage
-s3_prefix = "node-app-dev"          # S3 bucket prefix
-region = "ap-southeast-1"           # AWS region
-confirm_changeset = true            # Prompt before applying changes
-capabilities = "CAPABILITY_IAM"     # Required for IAM role creation
-disable_rollback = false            # Rollback on failure
+stack_name = "node-app-dev"             # CloudFormation stack name (must be unique within your AWS account/region)
+resolve_s3 = true                       # Auto-create/manage an S3 bucket for deployment artifacts
+s3_prefix = "node-app-dev"              # Prefix / subfolder for artifacts inside the managed S3 bucket (not the bucket name)
+region = "ap-southeast-1"               # AWS Region to deploy the stack into
+confirm_changeset = true                # Ask for confirmation before applying the CloudFormation changeset
+capabilities = "CAPABILITY_IAM"         # Acknowledge the stack will create IAM resources
+disable_rollback = false                # Roll back the stack automatically if deployment fails
 parameter_overrides = "Environment=dev Cpu=256 Memory=512 DesiredCount=1 ApiEndpoint=https://api.openweathermap.org ApiKey=your-api-key-here"
 ```
+
+> `samconfig.toml` is gitignored so your API key stays local. Use `samconfig.toml.example` (tracked in git) as a reference.
 
 **Purpose:** After configuring this file, you can simply run `sam deploy` without any flags — it reads all settings from here.
 
