@@ -32,7 +32,7 @@ echo "============================================"
 
 # --- Step 1: Check prerequisites ---
 echo ""
-echo "[1/10] Checking prerequisites..."
+echo "[1/11] Checking prerequisites..."
 
 if ! command -v aws &> /dev/null; then
     echo "Error: AWS CLI not found. Install it from https://aws.amazon.com/cli/"
@@ -63,7 +63,7 @@ echo "All prerequisites met."
 
 # --- Step 2: Create nginx.conf from template ---
 echo ""
-echo "[2/10] Creating nginx.conf from template..."
+echo "[2/11] Creating nginx.conf from template..."
 
 if [ ! -f nginx.conf ]; then
     cp nginx.conf.example nginx.conf
@@ -74,28 +74,49 @@ fi
 
 # --- Step 3: Build Docker image ---
 echo ""
-echo "[3/10] Building Docker image..."
+echo "[3/11] Building Docker image..."
 
 docker build -t ${IMAGE_NAME} .
 echo "Docker image built successfully."
 
 # --- Step 4: Build SAM template ---
 echo ""
-echo "[4/10] Building SAM template..."
+echo "[4/11] Building SAM template..."
 
 sam build
 echo "SAM build completed."
 
-# --- Step 5: Deploy CloudFormation stack ---
+# --- Step 5: Ensure S3 deployment bucket exists ---
 echo ""
-echo "[5/10] Deploying CloudFormation stack..."
+echo "[5/11] Ensuring S3 deployment bucket exists..."
 
-sam deploy
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+S3_BUCKET="sam-deploy-${ACCOUNT_ID}"
+
+if ! aws s3 ls "s3://${S3_BUCKET}" &>/dev/null; then
+    aws s3 mb "s3://${S3_BUCKET}" --region "${REGION}"
+    echo "Created bucket: ${S3_BUCKET}"
+else
+    echo "Bucket already exists: ${S3_BUCKET}"
+fi
+
+# --- Step 6: Deploy CloudFormation stack ---
+echo ""
+echo "[6/11] Deploying CloudFormation stack..."
+
+if [ ! -f samconfig.toml ]; then
+    echo "No samconfig.toml found — running guided setup..."
+    echo "Enter your API key when prompted (ApiKey parameter)."
+    echo "Accept defaults for other parameters."
+    sam deploy --guided --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
+else
+    sam deploy --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
+fi
 echo "Stack deployment completed."
 
-# --- Step 6: Get stack outputs ---
+# --- Step 7: Get stack outputs ---
 echo ""
-echo "[6/10] Retrieving stack outputs..."
+echo "[7/11] Retrieving stack outputs..."
 
 ECR_URI=$(aws cloudformation describe-stacks \
     --stack-name ${STACK_NAME} \
@@ -124,27 +145,27 @@ echo "ECR URI:  ${ECR_URI}"
 echo "Cluster:  ${CLUSTER}"
 echo "Service:  ${SERVICE}"
 
-# --- Step 7: Authenticate Docker to ECR ---
+# --- Step 8: Authenticate Docker to ECR ---
 echo ""
-echo "[7/10] Authenticating Docker to ECR..."
+echo "[8/11] Authenticating Docker to ECR..."
 
 aws ecr get-login-password --region ${REGION} | \
     docker login --username AWS --password-stdin ${ECR_URI}
 
 echo "Docker authenticated to ECR."
 
-# --- Step 8: Tag and push image to ECR ---
+# --- Step 9: Tag and push image to ECR ---
 echo ""
-echo "[8/10] Pushing image to ECR..."
+echo "[9/11] Pushing image to ECR..."
 
 docker tag ${IMAGE_NAME}:latest ${ECR_URI}:latest
 docker push ${ECR_URI}:latest
 
 echo "Image pushed to ECR."
 
-# --- Step 9: Update ECS service ---
+# --- Step 10: Update ECS service ---
 echo ""
-echo "[9/10] Updating ECS service..."
+echo "[10/11] Updating ECS service..."
 
 aws ecs update-service \
     --cluster ${CLUSTER} \
@@ -154,9 +175,9 @@ aws ecs update-service \
 
 echo "ECS service updated, new deployment in progress."
 
-# --- Step 10: Get app URL ---
+# --- Step 11: Get app URL ---
 echo ""
-echo "[10/10] Retrieving app URL..."
+echo "[11/11] Retrieving app URL..."
 
 sleep 5
 

@@ -153,6 +153,8 @@ Windows (Git Bash or WSL):
 bash .scripts/deploy.sh
 ```
 
+> **First run:** The script will auto-detect that `samconfig.toml` doesn't exist and run `sam deploy --guided` to walk you through the initial setup (enter your API key when prompted). On subsequent runs, it reads from `samconfig.toml` and deploys fully automated.
+
 With a specific environment:
 
 ```bash
@@ -220,6 +222,12 @@ sam deploy \
     ApiKey="your-api-key" \
     ApiEndpoint="https://api.openweathermap.org"
 ```
+
+> **Troubleshooting:** If `sam deploy` fails with `S3 Bucket does not exist`, the SAM managed S3 bucket was deleted. Recreate it (the bucket name is in the error output):
+> ```bash
+> aws s3 mb s3://aws-sam-cli-managed-default-samclisourcebucket-<your-suffix> --region ap-southeast-1
+> sam deploy
+> ```
 
 ### 5. Authenticate Docker to ECR
 
