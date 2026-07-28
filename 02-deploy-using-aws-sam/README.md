@@ -208,51 +208,59 @@ Commands you can use next
 
 ### 4. Deploy Stack
 
+SAM creates the infrastructure (VPC, ECR, ECS, etc.) but does **not** push your Docker image. Choose a deployment method:
+
+> **Note:** The template uses named IAM roles. Always deploy with `--capabilities CAPABILITY_NAMED_IAM`.
+
 ```bash
-# Option A: Use samconfig.toml (reads settings from the file)
-sam deploy
+# Option A: First time — guided (auto-creates samconfig.toml)
+sam deploy --guided --capabilities CAPABILITY_NAMED_IAM
 
-# Option B: Guided deployment (interactive — overwrites samconfig.toml)
-sam deploy --guided
+# Option B: Subsequent deploys (reads from samconfig.toml)
+sam deploy --capabilities CAPABILITY_NAMED_IAM
 
-# Option C: Deploy with inline parameter overrides
-sam deploy \
-  --parameter-overrides \
-    Environment=dev \
-    ApiKey="your-api-key" \
-    ApiEndpoint="https://api.openweathermap.org"
+# Option C: Deploy with inline parameter overrides and 0 desired tasks
+sam deploy --guided --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides DesiredCount=0
 ```
 
+**After the stack completes**, push your Docker image to ECR first (steps 5–7), then ECS tasks can start.
+
 > **Troubleshooting:** If `sam deploy` fails with `S3 Bucket does not exist`, the SAM managed S3 bucket was deleted. Recreate it (the bucket name is in the error output):
+>
 > ```bash
 > aws s3 mb s3://aws-sam-cli-managed-default-samclisourcebucket-<your-suffix> --region ap-southeast-1
 > sam deploy
+> ```
+
+> **Tip:** If the deploy hangs at `ECSService CREATE_IN_PROGRESS`, there's no image in ECR yet. Use Option C (`DesiredCount=0`) to create infrastructure without starting tasks, push the image (steps 5–7), then scale up:
+>
+> ```bash
+> aws ecs update-service --cluster <CLUSTER> --service <SERVICE> --desired-count 1 --region ap-southeast-1
 > ```
 
 ### 5. Authenticate Docker to ECR
 
 After the stack deploys, get the ECR URI from the outputs:
 
+### 5. Authenticate Docker to ECR
+
+After the stack deploys, get the ECR URI from the outputs and authenticate:
+
 ```bash
 # Get ECR URI from stack outputs
-ECR_URI=$(aws cloudformation describe-stacks \
-  --stack-name node-app-dev \
-  --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryURI'].OutputValue" \
-  --output text)
+aws cloudformation describe-stacks --stack-name <your-stack-name> --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryURI'].OutputValue" --output text
 
-# Authenticate Docker to ECR
-aws ecr get-login-password --region <your-region> | \
-  docker login --username AWS --password-stdin $ECR_URI
+# Authenticate Docker to ECR (replace <ECR_URI> with the value above)
+aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin <ECR_URI>
 ```
 
 ### 6. Push Image to ECR
 
 ```bash
-# Tag the image
-docker tag node-app:latest $ECR_URI:latest
-
-# Push to ECR
-docker push $ECR_URI:latest
+# Tag and push (replace <ECR_URI> with the value from step 5)
+docker tag node-app:latest <ECR_URI>:latest
+docker push <ECR_URI>:latest
 ```
 
 ### 7. Update ECS Service
@@ -260,34 +268,37 @@ docker push $ECR_URI:latest
 Force a new deployment to pull the updated image:
 
 ```bash
-# Get cluster and service names from outputs
-CLUSTER=$(aws cloudformation describe-stacks \
-  --stack-name node-app-dev \
-  --query "Stacks[0].Outputs[?OutputKey=='ECSClusterName'].OutputValue" \
-  --output text)
+# Replace <CLUSTER> and <SERVICE> with values from stack outputs
+aws ecs update-service --cluster <CLUSTER> --service <SERVICE> --force-new-deployment --region ap-southeast-1
+```
 
-SERVICE=$(aws cloudformation describe-stacks \
-  --stack-name node-app-dev \
-  --query "Stacks[0].Outputs[?OutputKey=='ECSServiceName'].OutputValue" \
-  --output text)
+To get your cluster and service names:
 
-# Force new deployment
-aws ecs update-service \
-  --cluster $CLUSTER \
-  --service $SERVICE \
-  --force-new-deployment
+```bash
+aws cloudformation describe-stacks --stack-name <your-stack-name> --query "Stacks[0].Outputs[?OutputKey=='ECSClusterName'].OutputValue" --output text
+aws cloudformation describe-stacks --stack-name <your-stack-name> --query "Stacks[0].Outputs[?OutputKey=='ECSServiceName'].OutputValue" --output text
 ```
 
 ### 8. Access the App
 
+Get the task's public IP (replace `<CLUSTER>` and `<SERVICE>`):
+
 ```bash
-# Get task public IP
-TASK_ARN=$(aws ecs list-tasks --cluster $CLUSTER --service-name $SERVICE --query "taskArns[0]" --output text)
+# Get task ARN
+aws ecs list-tasks --cluster <CLUSTER> --service-name <SERVICE> --query "taskArns[0]" --output text
 
-aws ecs describe-tasks --cluster $CLUSTER --tasks $TASK_ARN \
-  --query "tasks[0].attachments[0].details[?name=='privateIPv4Address'].value" --output text
+# Get the ENI ID from the task (replace <TASK_ARN>)
+aws ecs describe-tasks --cluster <CLUSTER> --tasks <TASK_ARN> --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" --output text
 
-# Open in browser
+# Get the public IP from the ENI (replace <ENI_ID>)
+aws ec2 describe-network-interfaces --network-interface-ids <ENI_ID> --query "NetworkInterfaces[0].Association.PublicIp" --output text
+```
+
+> **Or via AWS Console:** Go to **ECS** > **Clusters** > `<CLUSTER>` > **Tasks** > click the running task > find **Public IP** under the network configuration.
+
+Then open in your browser:
+
+```
 http://<PUBLIC_IP>
 http://<PUBLIC_IP>/weather?q=manila
 ```
@@ -298,12 +309,12 @@ http://<PUBLIC_IP>/weather?q=manila
 # 1. Rebuild Docker image
 docker build -t node-app .
 
-# 2. Tag and push to ECR
-docker tag node-app:latest $ECR_URI:latest
-docker push $ECR_URI:latest
+# 2. Tag and push to ECR (replace <ECR_URI>)
+docker tag node-app:latest <ECR_URI>:latest
+docker push <ECR_URI>:latest
 
-# 3. Force ECS service update
-aws ecs update-service --cluster $CLUSTER --service $SERVICE --force-new-deployment
+# 3. Force ECS service update (replace <CLUSTER> and <SERVICE>)
+aws ecs update-service --cluster <CLUSTER> --service <SERVICE> --force-new-deployment --region ap-southeast-1
 ```
 
 ## Viewing Logs
@@ -356,8 +367,22 @@ Delete all environments:
 Delete all resources created by the SAM stack:
 
 ```bash
-sam delete
+# Get your stack name
+aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE --query "StackSummaries[?contains(StackName, 'sam') || contains(StackName, 'node-app')].[StackName]" --output text
+
+# Delete the CloudFormation stack (replace <your-stack-name>)
+sam delete --stack-name <your-stack-name> --region ap-southeast-1 --no-prompts
 ```
+
+> **Troubleshooting:** If `sam delete` fails with `DELETE_FAILED` — the ECR repository still contains Docker images. Force-delete the repo, then retry:
+> ```bash
+> # Force delete the ECR repository (removes all images)
+> aws ecr delete-repository --repository-name <your-ecr-repo-name> --region ap-southeast-1 --force
+>
+> # Retry stack deletion
+> aws cloudformation delete-stack --stack-name <your-stack-name> --region ap-southeast-1
+> ```
+> To find your ECR repo name: `aws ecr describe-repositories --region ap-southeast-1 --query "repositories[].repositoryName" --output text`
 
 This will:
 
@@ -369,22 +394,16 @@ This will:
 - Delete the Secrets Manager secrets
 - Delete the CloudWatch log group
 
-**Note:** `sam delete` will prompt for confirmation. Use `--no-prompts` to skip:
+Delete the custom S3 deployment bucket (if created by deploy.sh):
 
 ```bash
-sam delete --no-prompts
+aws s3 rb s3://sam-deploy-<ACCOUNT_ID> --force
 ```
 
-To also remove local build artifacts:
+Remove local build artifacts and config files:
 
 ```bash
-rm -rf .aws-sam/
-```
-
-To remove local config files (if you no longer need them):
-
-```bash
-rm samconfig.toml
+rm -rf .aws-sam/ samconfig.toml nginx.conf
 ```
 
 ## Outputs

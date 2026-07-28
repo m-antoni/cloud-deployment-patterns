@@ -25,6 +25,7 @@ REGION="ap-southeast-1"
 delete_env() {
     local TARGET_ENV=$1
     local STACK_NAME="node-app-${TARGET_ENV}"
+    local ECR_REPO="${TARGET_ENV}-node-app"
 
     echo ""
     echo "--------------------------------------------"
@@ -32,8 +33,34 @@ delete_env() {
     echo " Stack:    ${STACK_NAME}"
     echo "--------------------------------------------"
 
-    sam delete --stack-name ${STACK_NAME} --region ${REGION} --no-prompts
+    # Try to delete the stack
+    sam delete --stack-name ${STACK_NAME} --region ${REGION} --no-prompts || true
+
+    # Check if stack deletion failed (ECR might still have images)
+    STACK_STATUS=$(aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${REGION} --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "NOT_FOUND")
+
+    if [ "$STACK_STATUS" == "DELETE_FAILED" ]; then
+        echo "Stack deletion failed — ECR repository still contains images."
+        echo "Force deleting ECR repository '${ECR_REPO}'..."
+
+        aws ecr delete-repository --repository-name ${ECR_REPO} --region ${REGION} --force || true
+
+        echo "Retrying stack deletion..."
+        aws cloudformation delete-stack --stack-name ${STACK_NAME} --region ${REGION}
+
+        echo "Waiting for stack to be deleted..."
+        aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME} --region ${REGION} 2>/dev/null || true
+    fi
+
     echo "Stack '${STACK_NAME}' deleted."
+
+    # Delete the custom S3 deployment bucket
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    S3_BUCKET="sam-deploy-${ACCOUNT_ID}"
+    if aws s3 ls "s3://${S3_BUCKET}" &>/dev/null; then
+        aws s3 rb "s3://${S3_BUCKET}" --force
+        echo "S3 bucket '${S3_BUCKET}' deleted."
+    fi
 }
 
 # --- Handle --env all ---
