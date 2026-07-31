@@ -167,73 +167,22 @@ With a specific environment:
 .scripts\deploy.ps1 -Env staging
 ```
 
-> **Tip:** For fully-automated deploys triggered by git pushes, see [GitHub Actions (CI/CD)](#github-actions-cicd) below.
+Pin a specific image tag (e.g. a git SHA) instead of using the default:
+
+```bash
+./.scripts/deploy.sh --env dev --tag a1b2c3d
+.scripts\deploy.ps1 -Env dev -Tag a1b2c3d
+```
+
+> If no `--tag` is given, the script uses the current git SHA (or a timestamp outside a git repo).
+
+> **Rollback on failure:** the deploy script hands off to `.scripts/rollback.sh` / `rollback.ps1`, which deploys the pinned image tag via CloudFormation, waits for the ECS deployment to become healthy, and **automatically reverts to the previously deployed tag** if the new version never becomes healthy. CloudFormation also auto-rolls-back failed stack updates (`disable_rollback = false`).
+
+> **Tip:** For fully-automated deploys triggered by git pushes, see [github-actions.md](./github-actions.md).
 
 ## GitHub Actions (CI/CD)
 
-The repo includes a GitHub Actions workflow that runs this folder's deploy and cleanup scripts automatically from git pushes or a manual button. This is the **reference implementation** — the workflows for the other deployment patterns (01 Console, 03 Terraform) will follow the same structure.
-
-### Workflow File
-
-`.github/workflows/dev-aws-sam.yml` — located at the **repo root** (GitHub only discovers workflows in `.github/workflows/` at the root, so it cannot live inside this folder).
-
-### Triggers
-
-| Trigger | Job that runs |
-| ------- | ------------- |
-| Push to `release/dev-aws-sam` with changes under `02-deploy-using-aws-sam/**`, **no** `--cleanup` marker | Deploy |
-| Push to `release/dev-aws-sam` with `--cleanup` in **any** pushed commit message | Cleanup |
-| Actions tab → **Run workflow** → `mode: deploy` | Deploy |
-| Actions tab → **Run workflow** → `mode: cleanup` | Cleanup |
-
-### Required GitHub Secrets
-
-Add these to the **`release-dev-aws-sam`** Environment (repo **Settings** → **Environments** → `release-dev-aws-sam` → **Environment secrets**):
-
-| Secret | Value |
-| ------ | ----- |
-| `AWS_ACCESS_KEY_ID` | IAM access key ID |
-| `AWS_SECRET_ACCESS_KEY` | IAM secret access key |
-| `AWS_REGION` | `ap-southeast-1` |
-| `OPENWEATHER_API_KEY` | OpenWeatherMap API key |
-| `MAIL_SMTP_SERVER` | `smtp.gmail.com` |
-| `MAIL_USERNAME` | Sender email (e.g. `you@gmail.com`) |
-| `MAIL_PASSWORD` | Gmail app password |
-| `MAIL_FROM` | Sender email |
-| `MAIL_TO` | Recipient email |
-
-### How to Use
-
-**Deploy** — commit and push (without `--cleanup` in the message):
-
-```bash
-git add .
-git commit -m "fix weather endpoint"
-git push origin release/dev-aws-sam
-```
-
-**Cleanup** — commit and push with the `--cleanup` marker (this tears down the whole stack):
-
-```bash
-git add .
-git commit -m "--cleanup tear down dev stack"
-git push origin release/dev-aws-sam
-```
-
-**Manual run** — Actions tab → select the workflow → **Run workflow** → choose `deploy` or `cleanup`.
-
-### Email Notifications
-
-Each run sends two emails to `MAIL_TO`:
-
-1. **Started** — immediately when the job begins
-2. **Result** — on completion, with `SUCCESS` or `FAILED` in the subject and a link to the run
-
-### How It Works
-
-- `samconfig.toml` and `nginx.conf` are gitignored (they hold secrets), so CI regenerates them from the tracked `*.example` files. The API key is injected from the `OPENWEATHER_API_KEY` secret and `confirm_changeset` / `fail_on_empty_changeset` are set to `false` so `sam deploy` runs non-interactively.
-- `deploy.sh` scales the ECS service to 1 task after pushing the image (the stack is created with `DesiredCount=0`).
-- The cleanup job calls `.scripts/cleanup.sh --env dev --yes` — `--yes` skips the interactive confirmation since nothing can answer it in CI.
+The full CI/CD guide for this folder lives in **[github-actions.md](./github-actions.md)**.
 
 ## Deployment Steps (Manual)
 
@@ -449,7 +398,7 @@ Skip the interactive confirmation prompt (for CI / scripting):
 ./.scripts/cleanup.sh --env dev --yes
 ```
 
-> **GitHub Actions:** Cleanup can also be triggered from CI — push a commit containing `--cleanup` to `release/dev-aws-sam`, or use **Actions** → **Run workflow** → `mode: cleanup`. See [GitHub Actions (CI/CD)](#github-actions-cicd).
+> **GitHub Actions:** Cleanup can also be triggered from CI — push a commit whose message is exactly `--cleanup` to `release/dev-aws-sam`, or use **Actions** → **Run workflow** → `mode: cleanup`. See [github-actions.md](./github-actions.md).
 
 ### Manual Cleanup
 
@@ -463,7 +412,7 @@ aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE --query "St
 sam delete --stack-name <your-stack-name> --region ap-southeast-1 --no-prompts
 ```
 
-> **Troubleshooting:** If `sam delete` fails with `DELETE_FAILED` — the ECR repository still contains Docker images. Force-delete the repo, then retry:
+> **Troubleshooting:** If `sam delete` fails with `DELETE_FAILED` — the ECR repository still contains Docker images. The automated scripts (`cleanup.sh` / `cleanup.ps1`) **abort and leave everything intact** in this case rather than force-deleting anything. To recover manually:
 > ```bash
 > # Force delete the ECR repository (removes all images)
 > aws ecr delete-repository --repository-name <your-ecr-repo-name> --region ap-southeast-1 --force
