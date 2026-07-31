@@ -149,7 +149,7 @@ for ($i = 1; $i -le 60; $i++) {
         break
     }
 
-    Start-Sleep -Seconds 20
+    Start-Sleep -Seconds 10
 }
 
 if (-not $DEPLOY_OK) {

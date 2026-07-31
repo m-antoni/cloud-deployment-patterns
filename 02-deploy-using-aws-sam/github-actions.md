@@ -65,7 +65,7 @@ aws ecr describe-images --repository-name dev-node-app --region ap-southeast-1 \
   --query "imageDetails[*].imageTags" --output json
 ```
 
-> ECR keeps the last 20 images (lifecycle policy in `template.yaml`) ≈ last 10 deploys. Auto-rollback needs a previous deploy to exist.
+> ECR keeps the last 10 images (lifecycle policy in `template.yaml`) = the last 10 deploys. Auto-rollback needs a previous deploy to exist.
 
 ## Email Notifications
 
