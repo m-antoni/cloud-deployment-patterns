@@ -1,27 +1,27 @@
 # ============================================================
-# 02 - Deploy SAM (dev)
+# Release - Deploy SAM (dev)
 # ============================================================
 # Deploys the app in 02-deploy-using-aws-sam/ to AWS ECS Fargate
 # via the SAM/CloudFormation stack, then emails the result.
 # Also supports a cleanup mode that tears down the whole stack.
 #
 # Workflow triggers:
-#   - push to the feature/dev-02-aws-sam branch, but ONLY when files
+#   - push to the release/dev-aws-sam branch, but ONLY when files
 #     under 02-deploy-using-aws-sam/ change
 #       * normal push (no --cleanup marker)  -> deploy
 #       * push with --cleanup in a commit msg -> cleanup
 #   - manual "Run workflow" button -> pick mode: deploy or cleanup
 #
-# Requires these secrets in the "dev-02-aws-sam" Environment:
+# Requires these secrets in the "release-dev-aws-sam" Environment:
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION / OPENWEATHER_API_KEY
 #   MAIL_SMTP_SERVER / MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM / MAIL_TO
 # ============================================================
 
-name: 02 - Deploy AWS SAM (dev)
+name: Release - Deploy AWS SAM (dev)
 
 on:
   push:
-    branches: [feature/dev-02-aws-sam]
+    branches: [release/dev-aws-sam]
     paths: ["02-deploy-using-aws-sam/**"] # only run when the SAM app files change
   workflow_dispatch: # allow manual trigger from the Actions tab
     inputs:
@@ -50,7 +50,7 @@ jobs:
       (github.event_name == 'push' && !contains(github.event.commits.*.message, '--cleanup')) ||
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'deploy')
     runs-on: ubuntu-latest # Docker + bash are preinstalled here
-    environment: dev-02-aws-sam # pulls the environment secrets defined for "dev-02-aws-sam"
+    environment: release-dev-aws-sam # pulls the environment secrets defined for "release-dev-aws-sam"
 
     steps:
       # ---- Email: workflow started ----
@@ -61,7 +61,7 @@ jobs:
           server_port: 465 # SSL port for Gmail
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }} # Gmail app password
-          subject: "Deploy STARTED - 02 SAM (dev)"
+          subject: "Deploy STARTED - Release AWS SAM (dev)"
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
           body: |
@@ -111,7 +111,7 @@ jobs:
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           # Dynamically picks SUCCESS or FAILED based on the job's final status
-          subject: ${{ job.status == 'success' && 'Deploy SUCCESS - 02 SAM (dev)' || 'Deploy FAILED - 02 SAM (dev)' }}
+          subject: ${{ job.status == 'success' && 'Deploy SUCCESS - Release AWS SAM (dev)' || 'Deploy FAILED - Release AWS SAM (dev)' }}
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
           body: |
@@ -131,7 +131,7 @@ jobs:
       (github.event_name == 'push' && contains(github.event.commits.*.message, '--cleanup')) ||
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'cleanup')
     runs-on: ubuntu-latest
-    environment: dev-02-aws-sam
+    environment: release-dev-aws-sam
 
     steps:
       # ---- Email: cleanup started ----
@@ -142,7 +142,7 @@ jobs:
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Cleanup STARTED - 02 SAM (dev)"
+          subject: "Cleanup STARTED - Release AWS SAM (dev)"
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
           body: |
@@ -178,7 +178,7 @@ jobs:
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: ${{ job.status == 'success' && 'Cleanup SUCCESS - 02 SAM (dev)' || 'Cleanup FAILED - 02 SAM (dev)' }}
+          subject: ${{ job.status == 'success' && 'Cleanup SUCCESS - Release AWS SAM (dev)' || 'Cleanup FAILED - Release AWS SAM (dev)' }}
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
           body: |

@@ -175,20 +175,20 @@ The repo includes a GitHub Actions workflow that runs this folder's deploy and c
 
 ### Workflow File
 
-`.github/workflows/02-deploy-sam.yml` — located at the **repo root** (GitHub only discovers workflows in `.github/workflows/` at the root, so it cannot live inside this folder).
+`.github/workflows/dev-aws-sam.yml` — located at the **repo root** (GitHub only discovers workflows in `.github/workflows/` at the root, so it cannot live inside this folder).
 
 ### Triggers
 
 | Trigger | Job that runs |
 | ------- | ------------- |
-| Push to `feature/dev-02-aws-sam` with changes under `02-deploy-using-aws-sam/**`, **no** `--cleanup` marker | Deploy |
-| Push to `feature/dev-02-aws-sam` with `--cleanup` in **any** pushed commit message | Cleanup |
+| Push to `release/dev-aws-sam` with changes under `02-deploy-using-aws-sam/**`, **no** `--cleanup` marker | Deploy |
+| Push to `release/dev-aws-sam` with `--cleanup` in **any** pushed commit message | Cleanup |
 | Actions tab → **Run workflow** → `mode: deploy` | Deploy |
 | Actions tab → **Run workflow** → `mode: cleanup` | Cleanup |
 
 ### Required GitHub Secrets
 
-Add these to the **`dev-02-aws-sam`** Environment (repo **Settings** → **Environments** → `dev-02-aws-sam` → **Environment secrets**):
+Add these to the **`release-dev-aws-sam`** Environment (repo **Settings** → **Environments** → `release-dev-aws-sam` → **Environment secrets**):
 
 | Secret | Value |
 | ------ | ----- |
@@ -209,7 +209,7 @@ Add these to the **`dev-02-aws-sam`** Environment (repo **Settings** → **Envir
 ```bash
 git add .
 git commit -m "fix weather endpoint"
-git push origin feature/dev-02-aws-sam
+git push origin release/dev-aws-sam
 ```
 
 **Cleanup** — commit and push with the `--cleanup` marker (this tears down the whole stack):
@@ -217,7 +217,7 @@ git push origin feature/dev-02-aws-sam
 ```bash
 git add .
 git commit -m "--cleanup tear down dev stack"
-git push origin feature/dev-02-aws-sam
+git push origin release/dev-aws-sam
 ```
 
 **Manual run** — Actions tab → select the workflow → **Run workflow** → choose `deploy` or `cleanup`.
@@ -449,7 +449,7 @@ Skip the interactive confirmation prompt (for CI / scripting):
 ./.scripts/cleanup.sh --env dev --yes
 ```
 
-> **GitHub Actions:** Cleanup can also be triggered from CI — push a commit containing `--cleanup` to `feature/dev-02-aws-sam`, or use **Actions** → **Run workflow** → `mode: cleanup`. See [GitHub Actions (CI/CD)](#github-actions-cicd).
+> **GitHub Actions:** Cleanup can also be triggered from CI — push a commit containing `--cleanup` to `release/dev-aws-sam`, or use **Actions** → **Run workflow** → `mode: cleanup`. See [GitHub Actions (CI/CD)](#github-actions-cicd).
 
 ### Manual Cleanup
 
