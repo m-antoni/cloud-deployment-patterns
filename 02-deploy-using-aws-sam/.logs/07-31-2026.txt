@@ -1,3 +1,4 @@
 - initial deployed
 - try to update deploy
 - cleanup stack
+- redeploy
