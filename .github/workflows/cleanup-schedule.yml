@@ -5,7 +5,7 @@
 # idle AWS charges. Runs from the DEFAULT branch (master).
 #
 # Currently handled:
-#   - 02 AWS SAM (dev): full stack teardown at 12:00 AM Asia/Singapore
+#   - Release AWS SAM (dev): full stack teardown at 12:00 AM Asia/Singapore
 # Future: add jobs for 01 (AWS Console) and 03 (Terraform).
 #
 # Manual test (DESTRUCTIVE - deletes the whole dev stack):
@@ -34,7 +34,7 @@ jobs:
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Cleanup STARTED - 02 SAM (dev)"
+          subject: "Cleanup STARTED - Release AWS SAM (dev)"
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
           body: |
@@ -63,7 +63,7 @@ jobs:
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: ${{ job.status == 'success' && 'Cleanup SUCCESS - 02 SAM (dev)' || 'Cleanup FAILED - 02 SAM (dev)' }}
+          subject: ${{ job.status == 'success' && 'Cleanup SUCCESS - Release AWS SAM (dev)' || 'Cleanup FAILED - Release AWS SAM (dev)' }}
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
           body: |
