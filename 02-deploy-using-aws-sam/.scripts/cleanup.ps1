@@ -26,7 +26,14 @@ function Delete-Env {
     }
 
     # Check if stack deletion failed (ECR might still have images)
-    $STACK_STATUS = & { aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION --query "Stacks[0].StackStatus" --output text } 2>$null
+    # try/catch: when the stack no longer exists, `aws` prints an error to
+    # stderr, which PowerShell 5.1 turns into a terminating error under
+    # $ErrorActionPreference = "Stop" (previously crashed the script)
+    try {
+        $STACK_STATUS = & { aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION --query "Stacks[0].StackStatus" --output text } 2>$null
+    } catch {
+        $STACK_STATUS = ""
+    }
     if (-not $STACK_STATUS) { $STACK_STATUS = "NOT_FOUND" }
 
     if ($STACK_STATUS -eq "DELETE_FAILED") {

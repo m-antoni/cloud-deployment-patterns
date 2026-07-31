@@ -34,7 +34,10 @@ if (-not (Get-Command "docker" -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if (-not (docker info 2>$null | Out-String | Select-String "Server Version")) {
+# 2>&1 merges stderr into the output stream (2>$null would throw under
+# $ErrorActionPreference = "Stop" in PowerShell 5.1 when Docker is not running)
+$DOCKER_INFO = docker info 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0 -or -not ($DOCKER_INFO | Select-String "Server Version")) {
     Write-Host "Error: Docker is not running. Start Docker Desktop or the Docker service."
     exit 1
 }
