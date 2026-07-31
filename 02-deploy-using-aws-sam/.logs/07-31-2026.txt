@@ -3,3 +3,4 @@
 - cleanup stack
 - redeploy
 - cleanup stack
+- cleanup stack
