@@ -52,7 +52,7 @@ Hands-on guide: one Node.js api deployed via AWS Console, SAM, and Terraform
 deploy-patterns/
 ├── README.md                              # This file (overview)
 ├── .github/workflows/                     # GitHub Actions CI/CD pipelines (one per pattern)
-│   └── 02-deploy-sam.yml                  # Deploy/cleanup for the SAM app
+│   └── dev-aws-sam.yml                     # Deploy/cleanup for the SAM app
 ├── 01-deploy-using-aws-console/           # Manual deployment via AWS Console
 │   ├── README.md                          # Step-by-step console guide
 │   ├── src/                               # App source code
@@ -86,16 +86,16 @@ This repo uses GitHub Actions to automate deployment and cleanup for each deploy
 
 | Workflow file | Pattern | Status |
 | ------------- | ------- | ------ |
-| `02-deploy-sam.yml` | AWS SAM (folder `02-deploy-using-aws-sam/`) | ✅ Implemented |
+| `dev-aws-sam.yml` | AWS SAM (folder `02-deploy-using-aws-sam/`) | ✅ Implemented |
 | _(planned)_ | AWS Console (folder `01-deploy-using-aws-console/`) | Planned |
 | _(planned)_ | Terraform (folder `03-deploy-using-terraform/`) | Planned |
 
 Every workflow follows the same conventions:
 
-- **Triggers** — pushes to a pattern-specific branch (e.g. `feature/dev-02-aws-sam`) with a path filter, plus a manual **Run workflow** button.
+- **Triggers** — pushes to a pattern-specific branch (e.g. `release/dev-aws-sam`) with a path filter, plus a manual **Run workflow** button.
 - **Mode** — a `mode` input (`deploy` | `cleanup`). Cleanup can also be triggered by pushing a commit whose message contains `--cleanup`.
 - **Notifications** — every run emails started + SUCCESS/FAILED results with a link to the run.
-- **Secrets** — scoped to a per-pattern GitHub Environment (e.g. `dev-02-aws-sam`) holding AWS credentials and notification SMTP settings.
+- **Secrets** — scoped to a per-pattern GitHub Environment (e.g. `release-dev-aws-sam`) holding AWS credentials and notification SMTP settings.
 
 The [AWS SAM workflow](./02-deploy-using-aws-sam/#github-actions-cicd) is the reference implementation — the other patterns will mirror its structure.
 

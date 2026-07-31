@@ -16,13 +16,13 @@ name: Scheduled Cleanup
 
 on:
   schedule:
-    - cron: "0 16 * * *"   # 12:00 AM Asia/Singapore (16:00 UTC)
-  workflow_dispatch: {}     # on-demand test of the same job
+    - cron: "0 16 * * *" # 12:00 AM Asia/Singapore (16:00 UTC)
+  workflow_dispatch: {} # on-demand test of the same job
 
 jobs:
   cleanup-02-aws-sam:
     runs-on: ubuntu-latest
-    environment: dev-02-aws-sam   # AWS + mail secrets for the 02 pattern
+    environment: release-dev-aws-sam # AWS + mail secrets for the 02 pattern
     defaults:
       run:
         working-directory: 02-deploy-using-aws-sam

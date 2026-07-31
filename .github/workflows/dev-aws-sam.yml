@@ -6,13 +6,13 @@
 # Also supports a cleanup mode that tears down the whole stack.
 #
 # Workflow triggers:
-#   - push to the feature/dev-02-aws-sam branch, but ONLY when files
+#   - push to the release/dev-aws-sam branch, but ONLY when files
 #     under 02-deploy-using-aws-sam/ change
 #       * normal push (no --cleanup marker)  -> deploy
 #       * push with --cleanup in a commit msg -> cleanup
 #   - manual "Run workflow" button -> pick mode: deploy or cleanup
 #
-# Requires these secrets in the "dev-02-aws-sam" Environment:
+# Requires these secrets in the "release-dev-aws-sam" Environment:
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION / OPENWEATHER_API_KEY
 #   MAIL_SMTP_SERVER / MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM / MAIL_TO
 # ============================================================
@@ -21,7 +21,7 @@ name: 02 - Deploy AWS SAM (dev)
 
 on:
   push:
-    branches: [feature/dev-02-aws-sam]
+    branches: [release/dev-aws-sam]
     paths: ["02-deploy-using-aws-sam/**"] # only run when the SAM app files change
   workflow_dispatch: # allow manual trigger from the Actions tab
     inputs:
@@ -50,7 +50,7 @@ jobs:
       (github.event_name == 'push' && !contains(github.event.commits.*.message, '--cleanup')) ||
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'deploy')
     runs-on: ubuntu-latest # Docker + bash are preinstalled here
-    environment: dev-02-aws-sam # pulls the environment secrets defined for "dev-02-aws-sam"
+    environment: release-dev-aws-sam # pulls the environment secrets defined for "release-dev-aws-sam"
 
     steps:
       # ---- Email: workflow started ----
@@ -131,7 +131,7 @@ jobs:
       (github.event_name == 'push' && contains(github.event.commits.*.message, '--cleanup')) ||
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'cleanup')
     runs-on: ubuntu-latest
-    environment: dev-02-aws-sam
+    environment: release-dev-aws-sam
 
     steps:
       # ---- Email: cleanup started ----
