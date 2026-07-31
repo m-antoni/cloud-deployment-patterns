@@ -35,6 +35,32 @@ delete_env() {
     echo " Stack:    ${STACK_NAME}"
     echo "--------------------------------------------"
 
+    # Empty the ECR repository first. CloudFormation cannot delete a
+    # non-empty ECR repository, so 'sam delete' would otherwise fail with
+    # DELETE_FAILED. On failure we ABORT (rollback-style) and leave the
+    # stack intact. If the repo does not exist yet (e.g. cleanup before
+    # the first deploy) there is nothing to empty and we continue.
+    ECR_REPO="${TARGET_ENV}-node-app"
+    echo "Emptying ECR repository '${ECR_REPO}'..."
+    IMAGE_IDS=$(aws ecr list-images --repository-name "${ECR_REPO}" --region "${REGION}" \
+        --query "imageIds[].imageDigest" --output text 2>/dev/null \
+        | tr '\t' '\n' | sort -u \
+        | awk '{printf "%s{\"imageDigest\":\"%s\"}", sep, $0; sep=","}')
+
+    if [ -n "$IMAGE_IDS" ]; then
+        if ! aws ecr batch-delete-image --repository-name "${ECR_REPO}" --region "${REGION}" \
+            --image-ids "[${IMAGE_IDS}]" > /dev/null; then
+            echo ""
+            echo "[ROLLBACK] Cleanup aborted - could not empty ECR repository '${ECR_REPO}'."
+            echo " Stack '${STACK_NAME}' and its resources were left intact."
+            echo ""
+            exit 1
+        fi
+        echo "ECR repository '${ECR_REPO}' emptied."
+    else
+        echo "No images to remove in '${ECR_REPO}'."
+    fi
+
     # Delete the stack via SAM. On failure we ABORT the whole cleanup and
     # leave the resources intact (rollback-style) instead of force-deleting
     # the ECR repository and escalating the damage.

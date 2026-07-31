@@ -17,6 +17,37 @@ function Delete-Env {
     Write-Host " Stack:    $STACK_NAME"
     Write-Host "--------------------------------------------"
 
+    # Empty the ECR repository first. CloudFormation cannot delete a
+    # non-empty ECR repository, so 'sam delete' would otherwise fail with
+    # DELETE_FAILED. On failure we ABORT (rollback-style) and leave the
+    # stack intact. If the repo does not exist yet (e.g. cleanup before
+    # the first deploy) there is nothing to empty and we continue.
+    $ECR_REPO = "$TargetEnv-node-app"
+    Write-Host "Emptying ECR repository '$ECR_REPO'..."
+    try {
+        $RAW = & { aws ecr list-images --repository-name $ECR_REPO --region $REGION --query "imageIds[].imageDigest" --output json } 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "list-images failed" }
+        $DIGESTS = @()
+        if (-not [string]::IsNullOrWhiteSpace($RAW)) {
+            $DIGESTS = @($RAW | ConvertFrom-Json)
+        }
+        $DIGESTS = @($DIGESTS | Select-Object -Unique)
+        if ($DIGESTS.Count -gt 0) {
+            $IDS = ($DIGESTS | ForEach-Object { '{"imageDigest":"' + $_ + '"}' }) -join ','
+            $null = & { aws ecr batch-delete-image --repository-name $ECR_REPO --region $REGION --image-ids "[$IDS]" } 2>$null
+            if ($LASTEXITCODE -ne 0) { throw "batch-delete-image failed" }
+            Write-Host "ECR repository '$ECR_REPO' emptied."
+        } else {
+            Write-Host "No images to remove in '$ECR_REPO'."
+        }
+    } catch {
+        Write-Host ""
+        Write-Host "[ROLLBACK] Cleanup aborted - could not empty ECR repository '$ECR_REPO'."
+        Write-Host " Stack '$STACK_NAME' and its resources were left intact."
+        Write-Host ""
+        exit 1
+    }
+
     # Delete the stack via SAM. On failure we ABORT the whole cleanup and
     # leave the resources intact (rollback-style) instead of force-deleting
     # the ECR repository and escalating the damage.
