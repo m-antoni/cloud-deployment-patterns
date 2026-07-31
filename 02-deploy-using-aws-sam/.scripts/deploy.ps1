@@ -177,33 +177,51 @@ aws ecs update-service `
 
 Write-Host "ECS service updated, new deployment in progress."
 
-# --- Step 12: Get app URL ---
+# --- Step 12: Wait for task to start and retrieve the public IP ---
+# The task takes 1-2 min to start on Fargate, so poll until the public IP
+# is assigned instead of only waiting 5 seconds (which often hit the fallback).
 Write-Host ""
-Write-Host "[12/12] Retrieving app URL..."
+Write-Host "[12/12] Waiting for the task to start and retrieving the app URL..."
 
-Start-Sleep -Seconds 5
+$PUBLIC_IP = ""
+for ($i = 1; $i -le 15; $i++) {
+    try {
+        $TASK_ARN = aws ecs list-tasks `
+            --cluster $CLUSTER `
+            --service-name $SERVICE `
+            --region $REGION `
+            --query "taskArns[0]" `
+            --output text 2>$null
 
-$TASK_ARN = aws ecs list-tasks `
-    --cluster $CLUSTER `
-    --service-name $SERVICE `
-    --region $REGION `
-    --query "taskArns[0]" `
-    --output text
+        if ($TASK_ARN -and $TASK_ARN -ne "None") {
+            $ENI_ID = aws ecs describe-tasks `
+                --cluster $CLUSTER `
+                --tasks $TASK_ARN `
+                --region $REGION `
+                --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" `
+                --output text 2>$null
 
-if ($TASK_ARN -and $TASK_ARN -ne "None") {
-    $ENI_ID = aws ecs describe-tasks `
-        --cluster $CLUSTER `
-        --tasks $TASK_ARN `
-        --region $REGION `
-        --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" `
-        --output text
+            if ($ENI_ID -and $ENI_ID -ne "None") {
+                $PUBLIC_IP = aws ec2 describe-network-interfaces `
+                    --network-interface-ids $ENI_ID `
+                    --region $REGION `
+                    --query "NetworkInterfaces[0].Association.PublicIp" `
+                    --output text 2>$null
+            }
+        }
+    } catch {
+        # transient AWS error while the task starts; keep polling
+    }
 
-    $PUBLIC_IP = aws ec2 describe-network-interfaces `
-        --network-interface-ids $ENI_ID `
-        --region $REGION `
-        --query "NetworkInterfaces[0].Association.PublicIp" `
-        --output text
+    if ($PUBLIC_IP -and $PUBLIC_IP -ne "None") {
+        break
+    }
 
+    Write-Host "  Task still starting up... ($i/15)"
+    Start-Sleep -Seconds 10
+}
+
+if ($PUBLIC_IP -and $PUBLIC_IP -ne "None") {
     Write-Host ""
     Write-Host "============================================"
     Write-Host " Deployment Complete!"
@@ -218,7 +236,7 @@ if ($TASK_ARN -and $TASK_ARN -ne "None") {
     Write-Host " Deployment Complete!"
     Write-Host "============================================"
     Write-Host ""
-    Write-Host " Note: Task is still starting up."
-    Write-Host " Check the ECS console for the public IP."
+    Write-Host " Note: Could not retrieve the public IP yet."
+    Write-Host " Check the ECS console for the task's public IP."
     Write-Host ""
 }

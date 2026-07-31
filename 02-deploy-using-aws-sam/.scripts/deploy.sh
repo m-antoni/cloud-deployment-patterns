@@ -184,33 +184,47 @@ aws ecs update-service \
 
 echo "ECS service scaled to 1 and updated, new deployment in progress."
 
-# --- Step 11: Get app URL ---
+# --- Step 11: Wait for task to start and retrieve the public IP ---
+# The task takes 1-2 min to start on Fargate, so poll until the public IP
+# is assigned instead of only waiting 5 seconds (which often hit the fallback).
 echo ""
-echo "[11/11] Retrieving app URL..."
+echo "[11/11] Waiting for the task to start and retrieving the app URL..."
 
-sleep 5
-
-TASK_ARN=$(aws ecs list-tasks \
-    --cluster ${CLUSTER} \
-    --service-name ${SERVICE} \
-    --region ${REGION} \
-    --query "taskArns[0]" \
-    --output text)
-
-if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
-    ENI_ID=$(aws ecs describe-tasks \
+PUBLIC_IP=""
+for i in $(seq 1 15); do
+    TASK_ARN=$(aws ecs list-tasks \
         --cluster ${CLUSTER} \
-        --tasks ${TASK_ARN} \
+        --service-name ${SERVICE} \
         --region ${REGION} \
-        --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
-        --output text)
+        --query "taskArns[0]" \
+        --output text 2>/dev/null) || true
 
-    PUBLIC_IP=$(aws ec2 describe-network-interfaces \
-        --network-interface-ids ${ENI_ID} \
-        --region ${REGION} \
-        --query "NetworkInterfaces[0].Association.PublicIp" \
-        --output text)
+    if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
+        ENI_ID=$(aws ecs describe-tasks \
+            --cluster ${CLUSTER} \
+            --tasks ${TASK_ARN} \
+            --region ${REGION} \
+            --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
+            --output text 2>/dev/null) || true
 
+        if [ -n "$ENI_ID" ] && [ "$ENI_ID" != "None" ]; then
+            PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+                --network-interface-ids ${ENI_ID} \
+                --region ${REGION} \
+                --query "NetworkInterfaces[0].Association.PublicIp" \
+                --output text 2>/dev/null) || true
+        fi
+    fi
+
+    if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
+        break
+    fi
+
+    echo "  Task still starting up... (${i}/15)"
+    sleep 10
+done
+
+if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
     echo ""
     echo "============================================"
     echo " Deployment Complete!"
@@ -225,7 +239,7 @@ else
     echo " Deployment Complete!"
     echo "============================================"
     echo ""
-    echo " Note: Task is still starting up."
-    echo " Check the ECS console for the public IP."
+    echo " Note: Could not retrieve the public IP yet."
+    echo " Check the ECS console for the task's public IP."
     echo ""
 fi
