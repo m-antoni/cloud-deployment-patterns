@@ -164,9 +164,17 @@ docker push ${ECR_URI}:latest
 
 echo "Image pushed to ECR."
 
-# --- Step 10: Update ECS service ---
+# --- Step 10: Scale up to 1 and update ECS service ---
 echo ""
-echo "[10/11] Updating ECS service..."
+echo "[10/11] Scaling service to 1 task and updating ECS service..."
+
+# samconfig.toml deploys with DesiredCount=0 (image not in ECR yet),
+# so scale to 1 now that the image has been pushed
+aws ecs update-service \
+    --cluster ${CLUSTER} \
+    --service ${SERVICE} \
+    --desired-count 1 \
+    --region ${REGION} > /dev/null
 
 aws ecs update-service \
     --cluster ${CLUSTER} \
@@ -174,7 +182,7 @@ aws ecs update-service \
     --force-new-deployment \
     --region ${REGION} > /dev/null
 
-echo "ECS service updated, new deployment in progress."
+echo "ECS service scaled to 1 and updated, new deployment in progress."
 
 # --- Step 11: Get app URL ---
 echo ""

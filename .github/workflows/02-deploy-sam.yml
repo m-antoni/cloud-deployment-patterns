@@ -1,0 +1,189 @@
+# ============================================================
+# 02 - Deploy SAM (dev)
+# ============================================================
+# Deploys the app in 02-deploy-using-aws-sam/ to AWS ECS Fargate
+# via the SAM/CloudFormation stack, then emails the result.
+# Also supports a cleanup mode that tears down the whole stack.
+#
+# Workflow triggers:
+#   - push to the feature/dev-02-aws-sam branch, but ONLY when files
+#     under 02-deploy-using-aws-sam/ change
+#       * normal push (no --cleanup marker)  -> deploy
+#       * push with --cleanup in a commit msg -> cleanup
+#   - manual "Run workflow" button -> pick mode: deploy or cleanup
+#
+# Requires these secrets in the "dev-02-aws-sam" Environment:
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION / OPENWEATHER_API_KEY
+#   MAIL_SMTP_SERVER / MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM / MAIL_TO
+# ============================================================
+
+name: 02 - Deploy AWS SAM (dev)
+
+on:
+  push:
+    branches: [feature/dev-02-aws-sam]
+    paths: ["02-deploy-using-aws-sam/**"] # only run when the SAM app files change
+  workflow_dispatch: # allow manual trigger from the Actions tab
+    inputs:
+      mode:
+        description: What to run
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - cleanup
+
+# Every "run" step below executes from inside the 02 folder,
+# so scripts can be called as if the working dir were that folder.
+defaults:
+  run:
+    working-directory: 02-deploy-using-aws-sam
+
+jobs:
+  # ============================================================
+  # DEPLOY job
+  # Runs when: push without --cleanup marker, or manual run with mode=deploy
+  # ============================================================
+  deploy:
+    if: >-
+      (github.event_name == 'push' && !contains(github.event.commits.*.message, '--cleanup')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'deploy')
+    runs-on: ubuntu-latest # Docker + bash are preinstalled here
+    environment: dev-02-aws-sam # pulls the environment secrets defined for "dev-02-aws-sam"
+
+    steps:
+      # ---- Email: workflow started ----
+      - name: Notify - Deployment started
+        uses: dawidd6/action-send-mail@v3 # sends email via SMTP (Gmail)
+        with:
+          server_address: ${{ secrets.MAIL_SMTP_SERVER }} # e.g. smtp.gmail.com
+          server_port: 465 # SSL port for Gmail
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }} # Gmail app password
+          subject: "Deploy STARTED - 02 SAM (dev)"
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          body: |
+            SAM deployment started.
+            Repository: ${{ github.repository }}
+            Ref: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # ---- Get the source code ----
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- Authenticate to AWS (reads the IAM user keys from secrets) ----
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }} # e.g. ap-southeast-1
+
+      # samconfig.toml is gitignored (it holds the API key), so we build it
+      # in CI from the tracked example file:
+      #   - replace the API key placeholder with the real key
+      #   - flip confirm_changeset to false so sam deploy won't prompt (hangs in CI)
+      #   - flip fail_on_empty_changeset to false so no-op re-runs don't error
+      - name: Generate samconfig.toml from example
+        run: |
+          sed -e "s/YOUR_API_KEY_HERE/${{ secrets.OPENWEATHER_API_KEY }}/" \
+              -e "s/confirm_changeset = true/confirm_changeset = false/" \
+              samconfig.toml.example > samconfig.toml
+          echo "fail_on_empty_changeset = false" >> samconfig.toml
+
+      # Runs the existing deploy script:
+      # build Docker image -> SAM deploy (CloudFormation) -> push to ECR -> update ECS
+      - name: Deploy via deploy.sh
+        run: bash .scripts/deploy.sh
+
+      # ---- Email: final result ----
+      # if: always()  -> runs even if a previous step failed, so failures also email
+      - name: Notify - Deployment result
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SMTP_SERVER }}
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          # Dynamically picks SUCCESS or FAILED based on the job's final status
+          subject: ${{ job.status == 'success' && 'Deploy SUCCESS - 02 SAM (dev)' || 'Deploy FAILED - 02 SAM (dev)' }}
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          body: |
+            Status: ${{ job.status }}
+            Repository: ${{ github.repository }}
+            Ref: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  # ============================================================
+  # CLEANUP job
+  # Runs when: push WITH --cleanup marker, or manual run with mode=cleanup
+  # DESTRUCTIVE: deletes the entire stack (ECS, ECR, VPC, IAM, secrets, S3).
+  # ============================================================
+  cleanup:
+    if: >-
+      (github.event_name == 'push' && contains(github.event.commits.*.message, '--cleanup')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'cleanup')
+    runs-on: ubuntu-latest
+    environment: dev-02-aws-sam
+
+    steps:
+      # ---- Email: cleanup started ----
+      - name: Notify - Cleanup started
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SMTP_SERVER }}
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Cleanup STARTED - 02 SAM (dev)"
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          body: |
+            SAM cleanup started.
+            Repository: ${{ github.repository }}
+            Ref: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # ---- Get the source code ----
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- Authenticate to AWS ----
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Deletes the whole "dev" stack via the existing cleanup script.
+      # --yes skips the interactive confirmation (nothing can answer it in CI).
+      - name: Run cleanup
+        run: bash .scripts/cleanup.sh --env dev --yes
+
+      # ---- Email: final result ----
+      - name: Notify - Cleanup result
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SMTP_SERVER }}
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: ${{ job.status == 'success' && 'Cleanup SUCCESS - 02 SAM (dev)' || 'Cleanup FAILED - 02 SAM (dev)' }}
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          body: |
+            Status: ${{ job.status }}
+            Repository: ${{ github.repository }}
+            Ref: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

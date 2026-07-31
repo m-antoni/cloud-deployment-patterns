@@ -8,13 +8,16 @@ set -e
 #   ./cleanup.sh              # Delete dev environment (default)
 #   ./cleanup.sh --env prod   # Delete specific environment
 #   ./cleanup.sh --env all    # Delete all environments
+#   ./cleanup.sh --yes        # Skip confirmation prompt (for CI)
 # ============================================================
 
 # --- Parse arguments ---
 ENV="dev"
+YES=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env) ENV="$2"; shift 2 ;;
+        -y|--yes) YES=true; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -76,10 +79,12 @@ if [ "$ENV" == "all" ]; then
     echo "This will delete ALL resources for dev, staging, and prod."
     echo ""
 
-    read -p "Are you sure? (y/N): " CONFIRM
-    if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-        echo "Cleanup cancelled."
-        exit 0
+    if [ "$YES" != "true" ]; then
+        read -p "Are you sure? (y/N): " CONFIRM
+        if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+            echo "Cleanup cancelled."
+            exit 0
+        fi
     fi
 
     for TARGET_ENV in "${ENVIRONMENTS[@]}"; do
@@ -124,10 +129,12 @@ else
     echo "  - CloudWatch log group"
     echo ""
 
-    read -p "Are you sure? (y/N): " CONFIRM
-    if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-        echo "Cleanup cancelled."
-        exit 0
+    if [ "$YES" != "true" ]; then
+        read -p "Are you sure? (y/N): " CONFIRM
+        if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+            echo "Cleanup cancelled."
+            exit 0
+        fi
     fi
 
     delete_env ${ENV}

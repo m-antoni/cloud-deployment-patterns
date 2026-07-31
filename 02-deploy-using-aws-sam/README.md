@@ -167,6 +167,74 @@ With a specific environment:
 .scripts\deploy.ps1 -Env staging
 ```
 
+> **Tip:** For fully-automated deploys triggered by git pushes, see [GitHub Actions (CI/CD)](#github-actions-cicd) below.
+
+## GitHub Actions (CI/CD)
+
+The repo includes a GitHub Actions workflow that runs this folder's deploy and cleanup scripts automatically from git pushes or a manual button.
+
+### Workflow File
+
+`.github/workflows/02-deploy-sam.yml` — located at the **repo root** (GitHub only discovers workflows in `.github/workflows/` at the root, so it cannot live inside this folder).
+
+### Triggers
+
+| Trigger | Job that runs |
+| ------- | ------------- |
+| Push to `feature/dev-02-aws-sam` with changes under `02-deploy-using-aws-sam/**`, **no** `--cleanup` marker | Deploy |
+| Push to `feature/dev-02-aws-sam` with `--cleanup` in **any** pushed commit message | Cleanup |
+| Actions tab → **Run workflow** → `mode: deploy` | Deploy |
+| Actions tab → **Run workflow** → `mode: cleanup` | Cleanup |
+
+### Required GitHub Secrets
+
+Add these to the **`dev-02-aws-sam`** Environment (repo **Settings** → **Environments** → `dev-02-aws-sam` → **Environment secrets**):
+
+| Secret | Value |
+| ------ | ----- |
+| `AWS_ACCESS_KEY_ID` | IAM access key ID |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret access key |
+| `AWS_REGION` | `ap-southeast-1` |
+| `OPENWEATHER_API_KEY` | OpenWeatherMap API key |
+| `MAIL_SMTP_SERVER` | `smtp.gmail.com` |
+| `MAIL_USERNAME` | Sender email (e.g. `you@gmail.com`) |
+| `MAIL_PASSWORD` | Gmail app password |
+| `MAIL_FROM` | Sender email |
+| `MAIL_TO` | Recipient email |
+
+### How to Use
+
+**Deploy** — commit and push (without `--cleanup` in the message):
+
+```bash
+git add .
+git commit -m "fix weather endpoint"
+git push origin feature/dev-02-aws-sam
+```
+
+**Cleanup** — commit and push with the `--cleanup` marker (this tears down the whole stack):
+
+```bash
+git add .
+git commit -m "--cleanup tear down dev stack"
+git push origin feature/dev-02-aws-sam
+```
+
+**Manual run** — Actions tab → select the workflow → **Run workflow** → choose `deploy` or `cleanup`.
+
+### Email Notifications
+
+Each run sends two emails to `MAIL_TO`:
+
+1. **Started** — immediately when the job begins
+2. **Result** — on completion, with `SUCCESS` or `FAILED` in the subject and a link to the run
+
+### How It Works
+
+- `samconfig.toml` and `nginx.conf` are gitignored (they hold secrets), so CI regenerates them from the tracked `*.example` files. The API key is injected from the `OPENWEATHER_API_KEY` secret and `confirm_changeset` / `fail_on_empty_changeset` are set to `false` so `sam deploy` runs non-interactively.
+- `deploy.sh` scales the ECS service to 1 task after pushing the image (the stack is created with `DesiredCount=0`).
+- The cleanup job calls `.scripts/cleanup.sh --env dev --yes` — `--yes` skips the interactive confirmation since nothing can answer it in CI.
+
 ## Deployment Steps (Manual)
 
 ### 1. Build Docker Image
@@ -374,6 +442,14 @@ Delete all environments:
 ```bash
 ./.scripts/cleanup.sh --env all
 ```
+
+Skip the interactive confirmation prompt (for CI / scripting):
+
+```bash
+./.scripts/cleanup.sh --env dev --yes
+```
+
+> **GitHub Actions:** Cleanup can also be triggered from CI — push a commit containing `--cleanup` to `feature/dev-02-aws-sam`, or use **Actions** → **Run workflow** → `mode: cleanup`. See [GitHub Actions (CI/CD)](#github-actions-cicd).
 
 ### Manual Cleanup
 
