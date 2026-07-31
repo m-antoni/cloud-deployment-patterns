@@ -143,7 +143,7 @@ for i in $(seq 1 60); do
         break
     fi
 
-    sleep 20
+    sleep 10
 done
 
 if [ "${DEPLOY_OK}" != "true" ]; then
