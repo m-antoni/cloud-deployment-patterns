@@ -81,6 +81,8 @@ Additional Resources:
 | `LogGroup`                       | CloudWatch logs                      |
 | `ECSService`                     | ECS service running the app          |
 
+> See [aws-cli-notes.md](./aws-cli-notes.md) for read-only AWS CLI commands to inspect these resources.
+
 ## Parameters
 
 | Parameter           | Default                          | Description                                       |
