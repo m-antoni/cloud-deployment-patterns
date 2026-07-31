@@ -9,7 +9,6 @@ nginx.conf
 samconfig.toml
 sam-parameters.json
 .aws-sam/
-02-deploy-using-aws-sam/.logs/
 
 # Terraform
 .terraform/
