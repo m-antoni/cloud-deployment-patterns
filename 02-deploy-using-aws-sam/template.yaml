@@ -47,6 +47,11 @@ Parameters:
     Default: 1
     Description: Number of ECS tasks to run
 
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: ECR image tag to deploy (e.g. a git SHA) - pinned per deployment for rollback support
+
   Cpu:
     Type: String
     Default: "256"
@@ -103,7 +108,7 @@ Resources:
                 "selection": {
                   "tagStatus": "any",
                   "countType": "imageCountMoreThan",
-                  "countNumber": 10
+                  "countNumber": 20
                 },
                 "action": {
                   "type": "expire"
@@ -292,7 +297,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: node-app
-          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}-node-app:latest"
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}-node-app:${ImageTag}"
           PortMappings:
             - ContainerPort: !Ref ContainerPort
               Protocol: tcp

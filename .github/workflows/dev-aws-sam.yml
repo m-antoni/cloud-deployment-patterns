@@ -95,10 +95,11 @@ jobs:
               samconfig.toml.example > samconfig.toml
           echo "fail_on_empty_changeset = false" >> samconfig.toml
 
-      # Runs the existing deploy script:
-      # build Docker image -> SAM deploy (CloudFormation) -> push to ECR -> update ECS
+      # Runs the existing deploy script with a pinned image tag (git SHA):
+      # build Docker image -> push to ECR (pinned + latest) -> deploy the
+      # pinned tag via CloudFormation -> auto-revert on failure (rollback.sh)
       - name: Deploy via deploy.sh
-        run: bash .scripts/deploy.sh
+        run: bash .scripts/deploy.sh --env dev --tag "${{ github.sha }}"
 
       # ---- Email: final result ----
       # if: always()  -> runs even if a previous step failed, so failures also email

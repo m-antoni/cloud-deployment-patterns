@@ -167,6 +167,17 @@ With a specific environment:
 .scripts\deploy.ps1 -Env staging
 ```
 
+Pin a specific image tag (e.g. a git SHA) instead of using the default:
+
+```bash
+./.scripts/deploy.sh --env dev --tag a1b2c3d
+.scripts\deploy.ps1 -Env dev -Tag a1b2c3d
+```
+
+> If no `--tag` is given, the script uses the current git SHA (or a timestamp outside a git repo).
+
+> **Rollback on failure:** the deploy script hands off to `.scripts/rollback.sh` / `rollback.ps1`, which deploys the pinned image tag via CloudFormation, waits for the ECS deployment to become healthy, and **automatically reverts to the previously deployed tag** if the new version never becomes healthy. CloudFormation also auto-rolls-back failed stack updates (`disable_rollback = false`).
+
 > **Tip:** For fully-automated deploys triggered by git pushes, see [GitHub Actions (CI/CD)](#github-actions-cicd) below.
 
 ## GitHub Actions (CI/CD)
@@ -175,7 +186,7 @@ The repo includes a GitHub Actions workflow that runs this folder's deploy and c
 
 ### Workflow File
 
-`.github/workflows/dev-aws-sam.yml` — located at the **repo root** (GitHub only discovers workflows in `.github/workflows/` at the root, so it cannot live inside this folder).
+`.github/workflows/dev-aws-sam.yml` (deploy/cleanup) and `.github/workflows/dev-aws-sam-rollback.yml` (manual rollback) — located at the **repo root** (GitHub only discovers workflows in `.github/workflows/` at the root, so they cannot live inside this folder).
 
 ### Triggers
 
@@ -185,6 +196,7 @@ The repo includes a GitHub Actions workflow that runs this folder's deploy and c
 | Push to `release/dev-aws-sam` with `--cleanup` in **any** pushed commit message | Cleanup |
 | Actions tab → **Run workflow** → `mode: deploy` | Deploy |
 | Actions tab → **Run workflow** → `mode: cleanup` | Cleanup |
+| Actions tab → **Run workflow** (dev-aws-sam-rollback.yml) → pick `environment` + `tag` | Rollback |
 
 ### Required GitHub Secrets
 
@@ -232,8 +244,18 @@ Each run sends two emails to `MAIL_TO`:
 ### How It Works
 
 - `samconfig.toml` and `nginx.conf` are gitignored (they hold secrets), so CI regenerates them from the tracked `*.example` files. The API key is injected from the `OPENWEATHER_API_KEY` secret and `confirm_changeset` / `fail_on_empty_changeset` are set to `false` so `sam deploy` runs non-interactively.
-- `deploy.sh` scales the ECS service to 1 task after pushing the image (the stack is created with `DesiredCount=0`).
+- `deploy.sh` builds the image, pushes it to ECR as both `:latest` and `:<git-sha>`, scales the ECS service to 1 task (the stack is created with `DesiredCount=0`), then hands off to `rollback.sh`.
+- `rollback.sh` redeploys the stack with `ImageTag=<git-sha>` via `sam deploy --parameter-overrides`, waits for the ECS deployment to become healthy, and **auto-reverts to the previous tag** if it doesn't. See [Rollback](#rollback).
 - The cleanup job calls `.scripts/cleanup.sh --env dev --yes` — `--yes` skips the interactive confirmation since nothing can answer it in CI.
+
+### Rollback
+
+Every deploy pins the exact image tag it ran, so any previous version can be restored:
+
+- **Automatic** — if the new deployment never becomes healthy, `rollback.sh` redeploys the previous tag and the run exits `1` (the result email shows `FAILED`). CloudFormation additionally auto-rolls-back failed stack updates.
+- **Manual** — use the `dev-aws-sam-rollback.yml` workflow (Actions tab → **Run workflow**) to deliberately revert to a specific tag: choose `environment` and `tag` (e.g. an old git SHA or `latest`), and the workflow deploys that version via `.scripts/rollback.sh --manual`.
+- **Locally** — `./.scripts/rollback.sh --env dev --tag <git-sha>` (or `rollback.ps1 -Tag <git-sha>`). Add `--manual` to skip the automatic revert.
+- ECR keeps the last 20 images (`template.yaml` lifecycle policy) so old tags remain available for rollback.
 
 ## Deployment Steps (Manual)
 
@@ -463,7 +485,7 @@ aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE --query "St
 sam delete --stack-name <your-stack-name> --region ap-southeast-1 --no-prompts
 ```
 
-> **Troubleshooting:** If `sam delete` fails with `DELETE_FAILED` — the ECR repository still contains Docker images. Force-delete the repo, then retry:
+> **Troubleshooting:** If `sam delete` fails with `DELETE_FAILED` — the ECR repository still contains Docker images. The automated scripts (`cleanup.sh` / `cleanup.ps1`) **abort and leave everything intact** in this case rather than force-deleting anything. To recover manually:
 > ```bash
 > # Force delete the ECR repository (removes all images)
 > aws ecr delete-repository --repository-name <your-ecr-repo-name> --region ap-southeast-1 --force

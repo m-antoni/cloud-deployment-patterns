@@ -1,0 +1,98 @@
+# ============================================================
+# Release - Rollback AWS SAM (dev)
+# ============================================================
+# Manual rollback of the app in 02-deploy-using-aws-sam/.
+# Redeploys a specific pinned image tag (e.g. an old git SHA) via
+# CloudFormation so the ECS service runs that version again, then emails
+# the result.
+#
+# Note: the DEPLOY workflow (dev-aws-sam.yml) already reverts to the
+# previous tag automatically when a deployment fails. This workflow is for
+# deliberate rollbacks (e.g. reverting to an older version on purpose).
+#
+# Requires these secrets in the "release-dev-aws-sam" Environment:
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION
+#   MAIL_SMTP_SERVER / MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM / MAIL_TO
+# ============================================================
+
+name: Release - Rollback AWS SAM (dev)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+      tag:
+        description: Image tag to roll back to (git SHA or 'latest')
+        required: true
+
+defaults:
+  run:
+    working-directory: 02-deploy-using-aws-sam
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: release-dev-aws-sam # pulls the environment secrets defined for "release-dev-aws-sam"
+
+    steps:
+      # ---- Email: rollback started ----
+      - name: Notify - Rollback started
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SMTP_SERVER }}
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Rollback STARTED - Release AWS SAM (dev)"
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          body: |
+            SAM rollback started.
+            Repository: ${{ github.repository }}
+            Ref: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Target tag: ${{ inputs.tag }}
+
+      # ---- Get the source code ----
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- Authenticate to AWS (reads the IAM user keys from secrets) ----
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Runs the pinned deploy in MANUAL mode: deploy the chosen tag, no
+      # auto-revert (the whole point is reverting to the known-good tag).
+      - name: Rollback via rollback.sh
+        run: bash .scripts/rollback.sh --env "${{ inputs.environment }}" --tag "${{ inputs.tag }}" --manual
+
+      # ---- Email: final result ----
+      - name: Notify - Rollback result
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SMTP_SERVER }}
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: ${{ job.status == 'success' && 'Rollback SUCCESS - Release AWS SAM (dev)' || 'Rollback FAILED - Release AWS SAM (dev)' }}
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ secrets.MAIL_FROM }}
+          body: |
+            Status: ${{ job.status }}
+            Repository: ${{ github.repository }}
+            Ref: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Target tag: ${{ inputs.tag }}

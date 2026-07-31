@@ -5,18 +5,30 @@ set -e
 # Deploy Script for Node.js App on AWS ECS Fargate
 # ============================================================
 # Usage:
-#   ./deploy.sh              # Deploy to dev (default)
-#   ./deploy.sh --env prod   # Deploy to specific environment
+#   ./deploy.sh                             # Deploy to dev (default)
+#   ./deploy.sh --env prod                  # Deploy to specific environment
+#   ./deploy.sh --tag <image-tag>           # Pin a specific image tag (git SHA)
+# ============================================================
+# Builds the image, pushes it to ECR (pinned tag + latest), then hands off to
+# rollback.sh which deploys the pinned tag via CloudFormation and reverts to
+# the previous tag automatically if the deployment fails.
 # ============================================================
 
 # --- Parse arguments ---
 ENV="dev"
+TAG=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env) ENV="$2"; shift 2 ;;
+        --tag) TAG="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
+
+# Default the pinned tag to the current git SHA, else a timestamp
+if [ -z "$TAG" ]; then
+    TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "$(date +%Y%m%d%H%M%S)")
+fi
 
 # --- Configuration ---
 STACK_NAME="node-app-${ENV}"
@@ -28,6 +40,7 @@ echo "============================================"
 echo " Deploying to: ${ENV}"
 echo " Stack name:   ${STACK_NAME}"
 echo " Region:       ${REGION}"
+echo " Image tag:    ${TAG}"
 echo "============================================"
 
 # --- Step 1: Check prerequisites ---
@@ -100,20 +113,28 @@ else
     echo "Bucket already exists: ${S3_BUCKET}"
 fi
 
-# --- Step 6: Deploy CloudFormation stack ---
+# --- Step 6: Ensure the CloudFormation stack exists ---
+# The ECR repository must exist before we can push the image. On the first
+# deploy the stack (which owns the ECR repo) is created here; later deploys
+# just push the image and let rollback.sh apply the template + pinned tag.
 echo ""
-echo "[6/11] Deploying CloudFormation stack..."
+echo "[6/11] Ensuring CloudFormation stack '${STACK_NAME}' exists..."
 
-if [ ! -f samconfig.toml ]; then
-    echo "No samconfig.toml found — running guided setup..."
-    echo "Enter your API key when prompted (ApiKey parameter)."
-    echo "Accept defaults for other parameters."
-    echo "Stack name is pre-set to '${STACK_NAME}'."
-    sam deploy --guided --stack-name "${STACK_NAME}" --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
+if aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${REGION} &>/dev/null; then
+    echo "Stack already exists, skipping creation."
 else
-    sam deploy --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
+    echo "Stack not found -- creating it now..."
+    if [ ! -f samconfig.toml ]; then
+        echo "No samconfig.toml found -- running guided setup..."
+        echo "Enter your API key when prompted (ApiKey parameter)."
+        echo "Accept defaults for other parameters."
+        echo "Stack name is pre-set to '${STACK_NAME}'."
+        sam deploy --guided --stack-name "${STACK_NAME}" --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
+    else
+        sam deploy --s3-bucket "${S3_BUCKET}" --capabilities CAPABILITY_NAMED_IAM
+    fi
+    echo "Stack created."
 fi
-echo "Stack deployment completed."
 
 # --- Step 7: Get stack outputs ---
 echo ""
@@ -155,91 +176,34 @@ aws ecr get-login-password --region ${REGION} | \
 
 echo "Docker authenticated to ECR."
 
-# --- Step 9: Tag and push image to ECR ---
+# --- Step 9: Tag and push image to ECR (pinned tag + latest) ---
 echo ""
 echo "[9/11] Pushing image to ECR..."
 
 docker tag ${IMAGE_NAME}:latest ${ECR_URI}:latest
+docker tag ${IMAGE_NAME}:latest ${ECR_URI}:${TAG}
 docker push ${ECR_URI}:latest
+docker push ${ECR_URI}:${TAG}
 
-echo "Image pushed to ECR."
+echo "Image pushed to ECR (latest + ${TAG})."
 
-# --- Step 10: Scale up to 1 and update ECS service ---
+# --- Step 10: Scale up to 1 (first deploy deploys with DesiredCount=0) ---
 echo ""
-echo "[10/11] Scaling service to 1 task and updating ECS service..."
+echo "[10/11] Scaling service to 1 task..."
 
-# samconfig.toml deploys with DesiredCount=0 (image not in ECR yet),
-# so scale to 1 now that the image has been pushed
 aws ecs update-service \
     --cluster ${CLUSTER} \
     --service ${SERVICE} \
     --desired-count 1 \
     --region ${REGION} > /dev/null
 
-aws ecs update-service \
-    --cluster ${CLUSTER} \
-    --service ${SERVICE} \
-    --force-new-deployment \
-    --region ${REGION} > /dev/null
+echo "Service scaled to 1 task."
 
-echo "ECS service scaled to 1 and updated, new deployment in progress."
-
-# --- Step 11: Wait for task to start and retrieve the public IP ---
-# The task takes 1-2 min to start on Fargate, so poll until the public IP
-# is assigned instead of only waiting 5 seconds (which often hit the fallback).
+# --- Step 11: Deploy pinned tag with rollback protection ---
+# rollback.sh runs the CloudFormation deploy with the pinned ImageTag,
+# waits for the ECS deployment to become healthy, and reverts to the
+# previous tag on failure.
 echo ""
-echo "[11/11] Waiting for the task to start and retrieving the app URL..."
+echo "[11/11] Deploying pinned image tag '${TAG}' with rollback protection..."
 
-PUBLIC_IP=""
-for i in $(seq 1 15); do
-    TASK_ARN=$(aws ecs list-tasks \
-        --cluster ${CLUSTER} \
-        --service-name ${SERVICE} \
-        --region ${REGION} \
-        --query "taskArns[0]" \
-        --output text 2>/dev/null) || true
-
-    if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
-        ENI_ID=$(aws ecs describe-tasks \
-            --cluster ${CLUSTER} \
-            --tasks ${TASK_ARN} \
-            --region ${REGION} \
-            --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
-            --output text 2>/dev/null) || true
-
-        if [ -n "$ENI_ID" ] && [ "$ENI_ID" != "None" ]; then
-            PUBLIC_IP=$(aws ec2 describe-network-interfaces \
-                --network-interface-ids ${ENI_ID} \
-                --region ${REGION} \
-                --query "NetworkInterfaces[0].Association.PublicIp" \
-                --output text 2>/dev/null) || true
-        fi
-    fi
-
-    if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
-        break
-    fi
-
-    echo "  Task still starting up... (${i}/15)"
-    sleep 10
-done
-
-if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ]; then
-    echo ""
-    echo "============================================"
-    echo " Deployment Complete!"
-    echo "============================================"
-    echo ""
-    echo " App URL: http://${PUBLIC_IP}"
-    echo " Weather: http://${PUBLIC_IP}/weather?q=manila"
-    echo ""
-else
-    echo ""
-    echo "============================================"
-    echo " Deployment Complete!"
-    echo "============================================"
-    echo ""
-    echo " Note: Could not retrieve the public IP yet."
-    echo " Check the ECS console for the task's public IP."
-    echo ""
-fi
+bash .scripts/rollback.sh --env ${ENV} --tag ${TAG}

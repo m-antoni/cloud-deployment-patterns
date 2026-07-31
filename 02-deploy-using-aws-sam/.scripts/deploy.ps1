@@ -1,8 +1,30 @@
 param(
-    [string]$Env = "dev"
+    [string]$Env = "dev",
+    [string]$Tag = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+# ============================================================
+# Deploy Script for Node.js App on AWS ECS Fargate
+# ============================================================
+# Usage:
+#   .\deploy.ps1                          # Deploy to dev (default)
+#   .\deploy.ps1 -Env prod                # Deploy to specific environment
+#   .\deploy.ps1 -Tag <image-tag>         # Pin a specific image tag (git SHA)
+# ============================================================
+# Builds the image, pushes it to ECR (pinned tag + latest), then hands off to
+# rollback.ps1 which deploys the pinned tag via CloudFormation and reverts to
+# the previous tag automatically if the deployment fails.
+# ============================================================
+
+# Default the pinned tag to the current git SHA, else a timestamp
+if (-not $Tag) {
+    $Tag = git rev-parse --short HEAD 2>$null
+    if (-not $Tag) {
+        $Tag = Get-Date -Format "yyyyMMddHHmmss"
+    }
+}
 
 # --- Configuration ---
 $STACK_NAME = "node-app-$Env"
@@ -13,11 +35,12 @@ Write-Host "============================================"
 Write-Host " Deploying to: $Env"
 Write-Host " Stack name:   $STACK_NAME"
 Write-Host " Region:       $REGION"
+Write-Host " Image tag:    $Tag"
 Write-Host "============================================"
 
 # --- Step 1: Check prerequisites ---
 Write-Host ""
-Write-Host "[1/12] Checking prerequisites..."
+Write-Host "[1/11] Checking prerequisites..."
 
 if (-not (Get-Command "aws" -ErrorAction SilentlyContinue)) {
     Write-Host "Error: AWS CLI not found. Install it from https://aws.amazon.com/cli/"
@@ -53,7 +76,7 @@ Write-Host "All prerequisites met."
 
 # --- Step 2: Create nginx.conf from template ---
 Write-Host ""
-Write-Host "[2/12] Creating nginx.conf from template..."
+Write-Host "[2/11] Creating nginx.conf from template..."
 
 if (-not (Test-Path "nginx.conf")) {
     Copy-Item "nginx.conf.example" "nginx.conf"
@@ -64,21 +87,21 @@ if (-not (Test-Path "nginx.conf")) {
 
 # --- Step 3: Build Docker image ---
 Write-Host ""
-Write-Host "[3/12] Building Docker image..."
+Write-Host "[3/11] Building Docker image..."
 
 docker build -t $IMAGE_NAME .
 Write-Host "Docker image built successfully."
 
 # --- Step 4: Build SAM template ---
 Write-Host ""
-Write-Host "[4/12] Building SAM template..."
+Write-Host "[4/11] Building SAM template..."
 
 sam build
 Write-Host "SAM build completed."
 
 # --- Step 5: Ensure S3 deployment bucket exists ---
 Write-Host ""
-Write-Host "[5/12] Ensuring S3 deployment bucket exists..."
+Write-Host "[5/11] Ensuring S3 deployment bucket exists..."
 
 $ACCOUNT_ID = aws sts get-caller-identity --query Account --output text
 $S3_BUCKET = "sam-deploy-$ACCOUNT_ID"
@@ -90,24 +113,30 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Bucket already exists: $S3_BUCKET"
 }
 
-# --- Step 6: Deploy CloudFormation stack ---
+# --- Step 6: Ensure the CloudFormation stack exists ---
 Write-Host ""
-Write-Host "[6/12] Deploying CloudFormation stack..."
+Write-Host "[6/11] Ensuring CloudFormation stack '$STACK_NAME' exists..."
 
-if (-not (Test-Path "samconfig.toml")) {
-    Write-Host "No samconfig.toml found -- running guided setup..."
-    Write-Host "Enter your API key when prompted (ApiKey parameter)."
-    Write-Host "Accept defaults for other parameters."
-    Write-Host "Stack name is pre-set to '$STACK_NAME'."
-    sam deploy --guided --stack-name $STACK_NAME --s3-bucket $S3_BUCKET --capabilities CAPABILITY_NAMED_IAM
+$null = aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Stack already exists, skipping creation."
 } else {
-    sam deploy --stack-name $STACK_NAME --s3-bucket $S3_BUCKET --capabilities CAPABILITY_NAMED_IAM
+    Write-Host "Stack not found -- creating it now..."
+    if (-not (Test-Path "samconfig.toml")) {
+        Write-Host "No samconfig.toml found -- running guided setup..."
+        Write-Host "Enter your API key when prompted (ApiKey parameter)."
+        Write-Host "Accept defaults for other parameters."
+        Write-Host "Stack name is pre-set to '$STACK_NAME'."
+        sam deploy --guided --stack-name $STACK_NAME --s3-bucket $S3_BUCKET --capabilities CAPABILITY_NAMED_IAM
+    } else {
+        sam deploy --stack-name $STACK_NAME --s3-bucket $S3_BUCKET --capabilities CAPABILITY_NAMED_IAM
+    }
+    Write-Host "Stack created."
 }
-Write-Host "Stack deployment completed."
 
 # --- Step 7: Get stack outputs ---
 Write-Host ""
-Write-Host "[7/12] Retrieving stack outputs..."
+Write-Host "[7/11] Retrieving stack outputs..."
 
 $ECR_URI = aws cloudformation describe-stacks `
     --stack-name $STACK_NAME `
@@ -138,24 +167,26 @@ Write-Host "Service:  $SERVICE"
 
 # --- Step 8: Authenticate Docker to ECR ---
 Write-Host ""
-Write-Host "[8/12] Authenticating Docker to ECR..."
+Write-Host "[8/11] Authenticating Docker to ECR..."
 
 aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_URI
 
 Write-Host "Docker authenticated to ECR."
 
-# --- Step 9: Tag and push image to ECR ---
+# --- Step 9: Tag and push image to ECR (pinned tag + latest) ---
 Write-Host ""
-Write-Host "[9/12] Pushing image to ECR..."
+Write-Host "[9/11] Pushing image to ECR..."
 
 docker tag ${IMAGE_NAME}:latest ${ECR_URI}:latest
+docker tag ${IMAGE_NAME}:latest ${ECR_URI}:${Tag}
 docker push ${ECR_URI}:latest
+docker push ${ECR_URI}:${Tag}
 
-Write-Host "Image pushed to ECR."
+Write-Host "Image pushed to ECR (latest + $Tag)."
 
-# --- Step 10: Scale up from 0 to 1 ---
+# --- Step 10: Scale up to 1 (first deploy deploys with DesiredCount=0) ---
 Write-Host ""
-Write-Host "[10/12] Scaling service to desired count 1..."
+Write-Host "[10/11] Scaling service to 1 task..."
 
 aws ecs update-service `
     --cluster $CLUSTER `
@@ -165,78 +196,8 @@ aws ecs update-service `
 
 Write-Host "Service scaled to 1 task."
 
-# --- Step 11: Update ECS service ---
+# --- Step 11: Deploy pinned tag with rollback protection ---
 Write-Host ""
-Write-Host "[11/12] Updating ECS service..."
+Write-Host "[11/11] Deploying pinned image tag '$Tag' with rollback protection..."
 
-aws ecs update-service `
-    --cluster $CLUSTER `
-    --service $SERVICE `
-    --force-new-deployment `
-    --region $REGION | Out-Null
-
-Write-Host "ECS service updated, new deployment in progress."
-
-# --- Step 12: Wait for task to start and retrieve the public IP ---
-# The task takes 1-2 min to start on Fargate, so poll until the public IP
-# is assigned instead of only waiting 5 seconds (which often hit the fallback).
-Write-Host ""
-Write-Host "[12/12] Waiting for the task to start and retrieving the app URL..."
-
-$PUBLIC_IP = ""
-for ($i = 1; $i -le 15; $i++) {
-    try {
-        $TASK_ARN = aws ecs list-tasks `
-            --cluster $CLUSTER `
-            --service-name $SERVICE `
-            --region $REGION `
-            --query "taskArns[0]" `
-            --output text 2>$null
-
-        if ($TASK_ARN -and $TASK_ARN -ne "None") {
-            $ENI_ID = aws ecs describe-tasks `
-                --cluster $CLUSTER `
-                --tasks $TASK_ARN `
-                --region $REGION `
-                --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" `
-                --output text 2>$null
-
-            if ($ENI_ID -and $ENI_ID -ne "None") {
-                $PUBLIC_IP = aws ec2 describe-network-interfaces `
-                    --network-interface-ids $ENI_ID `
-                    --region $REGION `
-                    --query "NetworkInterfaces[0].Association.PublicIp" `
-                    --output text 2>$null
-            }
-        }
-    } catch {
-        # transient AWS error while the task starts; keep polling
-    }
-
-    if ($PUBLIC_IP -and $PUBLIC_IP -ne "None") {
-        break
-    }
-
-    Write-Host "  Task still starting up... ($i/15)"
-    Start-Sleep -Seconds 10
-}
-
-if ($PUBLIC_IP -and $PUBLIC_IP -ne "None") {
-    Write-Host ""
-    Write-Host "============================================"
-    Write-Host " Deployment Complete!"
-    Write-Host "============================================"
-    Write-Host ""
-    Write-Host " App URL: http://$PUBLIC_IP"
-    Write-Host " Weather: http://$PUBLIC_IP/weather?q=manila"
-    Write-Host ""
-} else {
-    Write-Host ""
-    Write-Host "============================================"
-    Write-Host " Deployment Complete!"
-    Write-Host "============================================"
-    Write-Host ""
-    Write-Host " Note: Could not retrieve the public IP yet."
-    Write-Host " Check the ECS console for the task's public IP."
-    Write-Host ""
-}
+& "$PSScriptRoot\rollback.ps1" -Env $Env -Tag $Tag

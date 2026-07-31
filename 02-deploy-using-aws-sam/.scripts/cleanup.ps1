@@ -11,21 +11,27 @@ function Delete-Env {
     param([string]$TargetEnv)
 
     $STACK_NAME = "node-app-$TargetEnv"
-    $ECR_REPO = "$TargetEnv-node-app"
 
     Write-Host "--------------------------------------------"
     Write-Host " Deleting: $TargetEnv"
     Write-Host " Stack:    $STACK_NAME"
     Write-Host "--------------------------------------------"
 
-    # Try to delete the stack via SAM
+    # Delete the stack via SAM. On failure we ABORT the whole cleanup and
+    # leave the resources intact (rollback-style) instead of force-deleting
+    # the ECR repository and escalating the damage.
     try {
         $null = & { sam delete --stack-name $STACK_NAME --region $REGION --no-prompts } 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "sam delete failed" }
     } catch {
-        # sam delete may fail due to ECR images; handled below
+        Write-Host ""
+        Write-Host "[ROLLBACK] Cleanup aborted - 'sam delete' failed."
+        Write-Host " Stack '$STACK_NAME' and its resources were left intact."
+        Write-Host ""
+        exit 1
     }
 
-    # Check if stack deletion failed (ECR might still have images)
+    # Confirm the stack is really gone before touching anything else
     # try/catch: when the stack no longer exists, `aws` prints an error to
     # stderr, which PowerShell 5.1 turns into a terminating error under
     # $ErrorActionPreference = "Stop" (previously crashed the script)
@@ -36,16 +42,12 @@ function Delete-Env {
     }
     if (-not $STACK_STATUS) { $STACK_STATUS = "NOT_FOUND" }
 
-    if ($STACK_STATUS -eq "DELETE_FAILED") {
-        Write-Host "Stack deletion failed -- ECR repository still contains images."
-        Write-Host "Force deleting ECR repository '$ECR_REPO'..."
-        $null = aws ecr delete-repository --repository-name $ECR_REPO --region $REGION --force 2>&1
-
-        Write-Host "Retrying stack deletion..."
-        aws cloudformation delete-stack --stack-name $STACK_NAME --region $REGION
-
-        Write-Host "Waiting for stack to be deleted..."
-        $null = aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $REGION 2>&1
+    if ($STACK_STATUS -ne "NOT_FOUND" -and $STACK_STATUS -ne "DELETE_COMPLETE") {
+        Write-Host ""
+        Write-Host "[ROLLBACK] Cleanup aborted - stack '$STACK_NAME' still exists (status: $STACK_STATUS)."
+        Write-Host " Resources were left intact."
+        Write-Host ""
+        exit 1
     }
 
     Write-Host "Stack '$STACK_NAME' deleted."

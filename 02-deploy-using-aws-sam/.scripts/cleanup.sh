@@ -28,7 +28,6 @@ REGION="ap-southeast-1"
 delete_env() {
     local TARGET_ENV=$1
     local STACK_NAME="node-app-${TARGET_ENV}"
-    local ECR_REPO="${TARGET_ENV}-node-app"
 
     echo ""
     echo "--------------------------------------------"
@@ -36,23 +35,26 @@ delete_env() {
     echo " Stack:    ${STACK_NAME}"
     echo "--------------------------------------------"
 
-    # Try to delete the stack
-    sam delete --stack-name ${STACK_NAME} --region ${REGION} --no-prompts || true
+    # Delete the stack via SAM. On failure we ABORT the whole cleanup and
+    # leave the resources intact (rollback-style) instead of force-deleting
+    # the ECR repository and escalating the damage.
+    if ! sam delete --stack-name ${STACK_NAME} --region ${REGION} --no-prompts; then
+        echo ""
+        echo "[ROLLBACK] Cleanup aborted - 'sam delete' failed."
+        echo " Stack '${STACK_NAME}' and its resources were left intact."
+        echo ""
+        exit 1
+    fi
 
-    # Check if stack deletion failed (ECR might still have images)
+    # Confirm the stack is really gone before touching anything else
     STACK_STATUS=$(aws cloudformation describe-stacks --stack-name ${STACK_NAME} --region ${REGION} --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "NOT_FOUND")
 
-    if [ "$STACK_STATUS" == "DELETE_FAILED" ]; then
-        echo "Stack deletion failed — ECR repository still contains images."
-        echo "Force deleting ECR repository '${ECR_REPO}'..."
-
-        aws ecr delete-repository --repository-name ${ECR_REPO} --region ${REGION} --force || true
-
-        echo "Retrying stack deletion..."
-        aws cloudformation delete-stack --stack-name ${STACK_NAME} --region ${REGION}
-
-        echo "Waiting for stack to be deleted..."
-        aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME} --region ${REGION} 2>/dev/null || true
+    if [ "$STACK_STATUS" != "NOT_FOUND" ] && [ "$STACK_STATUS" != "DELETE_COMPLETE" ]; then
+        echo ""
+        echo "[ROLLBACK] Cleanup aborted - stack '${STACK_NAME}' still exists (status: ${STACK_STATUS})."
+        echo " Resources were left intact."
+        echo ""
+        exit 1
     fi
 
     echo "Stack '${STACK_NAME}' deleted."
