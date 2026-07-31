@@ -171,7 +171,7 @@ With a specific environment:
 
 ## GitHub Actions (CI/CD)
 
-The repo includes a GitHub Actions workflow that runs this folder's deploy and cleanup scripts automatically from git pushes or a manual button.
+The repo includes a GitHub Actions workflow that runs this folder's deploy and cleanup scripts automatically from git pushes or a manual button. This is the **reference implementation** — the workflows for the other deployment patterns (01 Console, 03 Terraform) will follow the same structure.
 
 ### Workflow File
 

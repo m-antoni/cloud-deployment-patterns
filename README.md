@@ -17,6 +17,7 @@ Hands-on guide: one Node.js api deployed via AWS Console, SAM, and Terraform
 | AWS IAM             | Manages access roles and permissions                   |
 | AWS VPC             | Virtual Private Cloud - isolated network for resources |
 | AWS CLI             | Command-line tool for managing AWS services            |
+| GitHub Actions      | CI/CD — automates deploy/cleanup for each deployment pattern |
 
 ## Deployment Methods
 
@@ -50,6 +51,8 @@ Hands-on guide: one Node.js api deployed via AWS Console, SAM, and Terraform
 ```
 deploy-patterns/
 ├── README.md                              # This file (overview)
+├── .github/workflows/                     # GitHub Actions CI/CD pipelines (one per pattern)
+│   └── 02-deploy-sam.yml                  # Deploy/cleanup for the SAM app
 ├── 01-deploy-using-aws-console/           # Manual deployment via AWS Console
 │   ├── README.md                          # Step-by-step console guide
 │   ├── src/                               # App source code
@@ -76,6 +79,25 @@ deploy-patterns/
 | [AWS&nbsp;Console](./01-deploy-using-aws-console/) | Manual deployment via AWS Management Console UI                    | Learning, one-off deployments     |
 | [AWS&nbsp;SAM](./02-deploy-using-aws-sam/)         | IaC using AWS SAM and CloudFormation                               | Automated, repeatable deployments |
 | [Terraform](./03-deploy-using-terraform/)          | IaC using Terraform — multi-cloud, state-managed **(In Progress)** | Advanced IaC, multi-cloud         |
+
+## CI/CD with GitHub Actions
+
+This repo uses GitHub Actions to automate deployment and cleanup for each deployment pattern. Workflows live in `.github/workflows/` — one file per pattern:
+
+| Workflow file | Pattern | Status |
+| ------------- | ------- | ------ |
+| `02-deploy-sam.yml` | AWS SAM (folder `02-deploy-using-aws-sam/`) | ✅ Implemented |
+| _(planned)_ | AWS Console (folder `01-deploy-using-aws-console/`) | Planned |
+| _(planned)_ | Terraform (folder `03-deploy-using-terraform/`) | Planned |
+
+Every workflow follows the same conventions:
+
+- **Triggers** — pushes to a pattern-specific branch (e.g. `feature/dev-02-aws-sam`) with a path filter, plus a manual **Run workflow** button.
+- **Mode** — a `mode` input (`deploy` | `cleanup`). Cleanup can also be triggered by pushing a commit whose message contains `--cleanup`.
+- **Notifications** — every run emails started + SUCCESS/FAILED results with a link to the run.
+- **Secrets** — scoped to a per-pattern GitHub Environment (e.g. `dev-02-aws-sam`) holding AWS credentials and notification SMTP settings.
+
+The [AWS SAM workflow](./02-deploy-using-aws-sam/#github-actions-cicd) is the reference implementation — the other patterns will mirror its structure.
 
 ## Prerequisites
 
