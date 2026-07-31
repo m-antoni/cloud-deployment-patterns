@@ -178,84 +178,11 @@ Pin a specific image tag (e.g. a git SHA) instead of using the default:
 
 > **Rollback on failure:** the deploy script hands off to `.scripts/rollback.sh` / `rollback.ps1`, which deploys the pinned image tag via CloudFormation, waits for the ECS deployment to become healthy, and **automatically reverts to the previously deployed tag** if the new version never becomes healthy. CloudFormation also auto-rolls-back failed stack updates (`disable_rollback = false`).
 
-> **Tip:** For fully-automated deploys triggered by git pushes, see [GitHub Actions (CI/CD)](#github-actions-cicd) below.
+> **Tip:** For fully-automated deploys triggered by git pushes, see [github-actions.md](./github-actions.md).
 
 ## GitHub Actions (CI/CD)
 
-The repo includes a GitHub Actions workflow that runs this folder's deploy and cleanup scripts automatically from git pushes or a manual button. This is the **reference implementation** — the workflows for the other deployment patterns (01 Console, 03 Terraform) will follow the same structure.
-
-### Workflow File
-
-`.github/workflows/dev-aws-sam.yml` (deploy/cleanup) and `.github/workflows/dev-aws-sam-rollback.yml` (manual rollback) — located at the **repo root** (GitHub only discovers workflows in `.github/workflows/` at the root, so they cannot live inside this folder).
-
-### Triggers
-
-| Trigger | Job that runs |
-| ------- | ------------- |
-| Push to `release/dev-aws-sam` with changes under `02-deploy-using-aws-sam/**`, **no** `--cleanup` marker | Deploy |
-| Push to `release/dev-aws-sam` with `--cleanup` in **any** pushed commit message | Cleanup |
-| Actions tab → **Run workflow** → `mode: deploy` | Deploy |
-| Actions tab → **Run workflow** → `mode: cleanup` | Cleanup |
-| Actions tab → **Run workflow** (dev-aws-sam-rollback.yml) → pick `environment` + `tag` | Rollback |
-
-### Required GitHub Secrets
-
-Add these to the **`release-dev-aws-sam`** Environment (repo **Settings** → **Environments** → `release-dev-aws-sam` → **Environment secrets**):
-
-| Secret | Value |
-| ------ | ----- |
-| `AWS_ACCESS_KEY_ID` | IAM access key ID |
-| `AWS_SECRET_ACCESS_KEY` | IAM secret access key |
-| `AWS_REGION` | `ap-southeast-1` |
-| `OPENWEATHER_API_KEY` | OpenWeatherMap API key |
-| `MAIL_SMTP_SERVER` | `smtp.gmail.com` |
-| `MAIL_USERNAME` | Sender email (e.g. `you@gmail.com`) |
-| `MAIL_PASSWORD` | Gmail app password |
-| `MAIL_FROM` | Sender email |
-| `MAIL_TO` | Recipient email |
-
-### How to Use
-
-**Deploy** — commit and push (without `--cleanup` in the message):
-
-```bash
-git add .
-git commit -m "fix weather endpoint"
-git push origin release/dev-aws-sam
-```
-
-**Cleanup** — commit and push with the `--cleanup` marker (this tears down the whole stack):
-
-```bash
-git add .
-git commit -m "--cleanup tear down dev stack"
-git push origin release/dev-aws-sam
-```
-
-**Manual run** — Actions tab → select the workflow → **Run workflow** → choose `deploy` or `cleanup`.
-
-### Email Notifications
-
-Each run sends two emails to `MAIL_TO`:
-
-1. **Started** — immediately when the job begins
-2. **Result** — on completion, with `SUCCESS` or `FAILED` in the subject and a link to the run
-
-### How It Works
-
-- `samconfig.toml` and `nginx.conf` are gitignored (they hold secrets), so CI regenerates them from the tracked `*.example` files. The API key is injected from the `OPENWEATHER_API_KEY` secret and `confirm_changeset` / `fail_on_empty_changeset` are set to `false` so `sam deploy` runs non-interactively.
-- `deploy.sh` builds the image, pushes it to ECR as both `:latest` and `:<git-sha>`, scales the ECS service to 1 task (the stack is created with `DesiredCount=0`), then hands off to `rollback.sh`.
-- `rollback.sh` redeploys the stack with `ImageTag=<git-sha>` via `sam deploy --parameter-overrides`, waits for the ECS deployment to become healthy, and **auto-reverts to the previous tag** if it doesn't. See [Rollback](#rollback).
-- The cleanup job calls `.scripts/cleanup.sh --env dev --yes` — `--yes` skips the interactive confirmation since nothing can answer it in CI.
-
-### Rollback
-
-Every deploy pins the exact image tag it ran, so any previous version can be restored:
-
-- **Automatic** — if the new deployment never becomes healthy, `rollback.sh` redeploys the previous tag and the run exits `1` (the result email shows `FAILED`). CloudFormation additionally auto-rolls-back failed stack updates.
-- **Manual** — use the `dev-aws-sam-rollback.yml` workflow (Actions tab → **Run workflow**) to deliberately revert to a specific tag: choose `environment` and `tag` (e.g. an old git SHA or `latest`), and the workflow deploys that version via `.scripts/rollback.sh --manual`.
-- **Locally** — `./.scripts/rollback.sh --env dev --tag <git-sha>` (or `rollback.ps1 -Tag <git-sha>`). Add `--manual` to skip the automatic revert.
-- ECR keeps the last 20 images (`template.yaml` lifecycle policy) so old tags remain available for rollback.
+The full CI/CD guide for this folder lives in **[github-actions.md](./github-actions.md)**.
 
 ## Deployment Steps (Manual)
 
@@ -471,7 +398,7 @@ Skip the interactive confirmation prompt (for CI / scripting):
 ./.scripts/cleanup.sh --env dev --yes
 ```
 
-> **GitHub Actions:** Cleanup can also be triggered from CI — push a commit containing `--cleanup` to `release/dev-aws-sam`, or use **Actions** → **Run workflow** → `mode: cleanup`. See [GitHub Actions (CI/CD)](#github-actions-cicd).
+> **GitHub Actions:** Cleanup can also be triggered from CI — push a commit whose message is exactly `--cleanup` to `release/dev-aws-sam`, or use **Actions** → **Run workflow** → `mode: cleanup`. See [github-actions.md](./github-actions.md).
 
 ### Manual Cleanup
 

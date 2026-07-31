@@ -100,7 +100,7 @@ Every workflow follows the same conventions:
 - **Notifications** — every run emails started + SUCCESS/FAILED results with a link to the run.
 - **Secrets** — scoped to a per-pattern GitHub Environment (e.g. `release-dev-aws-sam`) holding AWS credentials and notification SMTP settings.
 
-The [AWS SAM workflow](./02-deploy-using-aws-sam/#github-actions-cicd) is the reference implementation — the other patterns will mirror its structure.
+The [AWS SAM workflow](./02-deploy-using-aws-sam/github-actions.md) is the reference implementation — the other patterns will mirror its structure.
 
 ## Prerequisites
 
