@@ -27,21 +27,6 @@ jobs:
       run:
         working-directory: 02-deploy-using-aws-sam
     steps:
-      - name: Notify - Cleanup started
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.MAIL_SMTP_SERVER }}
-          server_port: 465
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Cleanup STARTED - Release AWS SAM (dev)"
-          to: ${{ secrets.MAIL_TO }}
-          from: ${{ secrets.MAIL_FROM }}
-          body: |
-            Scheduled SAM cleanup started.
-            Repository: ${{ github.repository }}
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -61,12 +46,29 @@ jobs:
         with:
           server_address: ${{ secrets.MAIL_SMTP_SERVER }}
           server_port: 465
+          secure: true
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: ${{ job.status == 'success' && 'Cleanup SUCCESS - Release AWS SAM (dev)' || 'Cleanup FAILED - Release AWS SAM (dev)' }}
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
-          body: |
-            Status: ${{ job.status }}
-            Repository: ${{ github.repository }}
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          html_body: |
+            <pre style="font-family: monospace; font-size: 14px; background-color: #f4f4f4; padding: 15px; border-radius: 5px;">
+            Cleanup Summary:
+            ----------------------------------------
+            Status:          ${{ job.status }}
+            Repository:      ${{ github.repository }}
+            Branch:          ${{ github.ref_name }}
+            Triggered By:    ${{ github.actor }}
+            Event Type:      ${{ github.event_name }}
+
+            Commit Details:
+            ----------------------------------------
+            Commit SHA:      ${{ github.sha }}
+            Commit Message:  ${{ github.event.head_commit.message || 'N/A' }}
+
+            Links & Logs:
+            ----------------------------------------
+            Repository URL:  <a href="${{ github.server_url }}/${{ github.repository }}">${{ github.server_url }}/${{ github.repository }}</a>
+            Workflow Run:    <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}</a>
+            </pre>
