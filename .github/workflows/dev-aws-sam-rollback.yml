@@ -76,6 +76,7 @@ jobs:
             Rollback Summary:
             ----------------------------------------
             Status:          ${{ job.status }}
+            Environment:     ${{ inputs.environment }}
             Repository:      ${{ github.repository }}
             Branch:          ${{ github.ref_name }}
             Triggered By:    ${{ github.actor }}
@@ -83,9 +84,8 @@ jobs:
 
             Rollback Target:
             ----------------------------------------
-            Target Tag:      ${{ inputs.tag || 'N/A' }}
-            Commit SHA:      ${{ github.sha }}
-            Commit Message:  ${{ github.event.head_commit.message || 'N/A' }}
+            Target Tag:      ${{ inputs.tag }}
+            Workflow SHA:    ${{ github.sha }}
 
             Links & Logs:
             ----------------------------------------

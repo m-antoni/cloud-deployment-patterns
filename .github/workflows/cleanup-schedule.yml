@@ -15,21 +15,33 @@
 name: Scheduled Cleanup
 
 on:
+  # ---- Scheduled Trigger ----
   schedule:
     - cron: "0 15 * * *" # 12:00 AM Asia/Singapore (15:00 UTC, +1h GitHub scheduler delay)
-  workflow_dispatch: {} # on-demand test of the same job
+
+  # ---- Manual Trigger ----
+  workflow_dispatch: {} # Allow on-demand testing from the Actions tab
 
 jobs:
+  # ============================================================
+  # CLEANUP JOB - AWS SAM (dev)
+  # Automatically tears down the SAM CloudFormation stack and associated resources.
+  # ============================================================
   cleanup-02-aws-sam:
     runs-on: ubuntu-latest
-    environment: release-dev-aws-sam # AWS + mail secrets for the 02 pattern
+    environment: release-dev-aws-sam # Pulls AWS credentials and mail secrets for the 02 pattern
+
+    # Set working directory to the SAM project root for all run steps
     defaults:
       run:
         working-directory: 02-deploy-using-aws-sam
+
     steps:
+      # ---- Get the source code ----
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ---- Authenticate to AWS (reads the IAM user keys from secrets) ----
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -37,9 +49,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # ---- Execute Cleanup Script ----
+      # Deletes the dev stack via cleanup.sh; --yes bypasses interactive confirmation in CI
       - name: Run cleanup (dev)
         run: bash .scripts/cleanup.sh --env dev --yes
 
+      # ---- Email Notification Step ----
+      # if: always() -> Ensures notification is sent regardless of job success or failure
       - name: Notify - Cleanup result
         if: always()
         uses: dawidd6/action-send-mail@v3
@@ -49,12 +65,14 @@ jobs:
           secure: true
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: ${{ job.status == 'success' && 'Cleanup SUCCESS - Release AWS SAM (dev)' || 'Cleanup FAILED - Release AWS SAM (dev)' }}
+          # Dynamically sets email subject based on final execution status
+          subject: ${{ job.status == 'success' && 'Scheduled Cleanup SUCCESS - AWS SAM (dev)' || 'Scheduled Cleanup FAILED - AWS SAM (dev)' }}
           to: ${{ secrets.MAIL_TO }}
           from: ${{ secrets.MAIL_FROM }}
+          # Formatted HTML body using monospace pre tag for consistent column alignment
           html_body: |
             <pre style="font-family: monospace; font-size: 14px; background-color: #f4f4f4; padding: 15px; border-radius: 5px;">
-            Cleanup Summary:
+            Scheduled Cleanup Summary:
             ----------------------------------------
             Status:          ${{ job.status }}
             Repository:      ${{ github.repository }}
@@ -62,10 +80,9 @@ jobs:
             Triggered By:    ${{ github.actor }}
             Event Type:      ${{ github.event_name }}
 
-            Commit Details:
+            Execution Context:
             ----------------------------------------
             Commit SHA:      ${{ github.sha }}
-            Commit Message:  ${{ github.event.head_commit.message || 'N/A' }}
 
             Links & Logs:
             ----------------------------------------
