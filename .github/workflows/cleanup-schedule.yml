@@ -16,7 +16,7 @@ name: Scheduled Cleanup
 
 on:
   schedule:
-    - cron: "0 16 * * *" # 12:00 AM Asia/Singapore (16:00 UTC)
+    - cron: "0 15 * * *" # 12:00 AM Asia/Singapore (15:00 UTC, +1h GitHub scheduler delay)
   workflow_dispatch: {} # on-demand test of the same job
 
 jobs:
